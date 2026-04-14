@@ -12,6 +12,15 @@ from selenium.webdriver.support import expected_conditions as EC
 class ProbelProductPage:
     PRODUCT_TITLE = (By.CSS_SELECTOR, "h1")
     FREIGHT_CEP_INPUT = (By.CSS_SELECTOR, "input[data-bind-no-frete='1']")
+    # Fallback selectors (site can change attributes/classes)
+    FREIGHT_CEP_INPUT_FALLBACKS = [
+        (By.CSS_SELECTOR, "input[data-bind-no-frete='1']"),
+        (By.CSS_SELECTOR, "input[placeholder*='CEP' i]"),
+        (By.CSS_SELECTOR, "input[name*='cep' i]"),
+        (By.CSS_SELECTOR, "input[id*='cep' i]"),
+        (By.CSS_SELECTOR, "input[inputmode='numeric'][maxlength='9']"),
+    ]
+
     FREIGHT_CALC_BUTTON = (By.CSS_SELECTOR, "button[type='submit'][data-bind-no-frete='1']")
     FREIGHT_TABLE = (By.CSS_SELECTOR, "table.taace8-shipping-simulator-1-x-shippingTable")
     FREIGHT_TABLE_ROW = (By.CSS_SELECTOR, "tbody.taace8-shipping-simulator-1-x-shippingTableBody tr")
@@ -43,10 +52,25 @@ class ProbelProductPage:
             cep_input.send_keys(ch)
             time.sleep((self.slow_type_delay_ms + random.randint(10, 60)) / 1000)
 
-        # Ensure we didn't accidentally focus the global search input.
-        active = self.driver.switch_to.active_element
-        if active and active.get_attribute("data-bind-no-frete") != "1":
-            raise RuntimeError("CEP_FIELD_NOT_FOUND")
+        # Basic sanity check: value should contain digits.
+        value = (cep_input.get_attribute("value") or "").strip()
+        if not any(ch.isdigit() for ch in value):
+            # Fallback for masked inputs: set value via JS and dispatch events.
+            self.driver.execute_script(
+                """
+                const el = arguments[0];
+                const v = arguments[1];
+                el.focus();
+                el.value = v;
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+                """,
+                cep_input,
+                cep,
+            )
+            value = (cep_input.get_attribute("value") or "").strip()
+            if not any(ch.isdigit() for ch in value):
+                raise RuntimeError("CEP_FIELD_NOT_FOUND")
 
         # Small blur to trigger masked inputs / validators.
         form.click()
@@ -109,6 +133,8 @@ class ProbelProductPage:
             "captcha",
             "unusual traffic",
             "acesso negado",
+            "access denied",
+            "forbidden",
         ]
         if any(s in body_text for s in text_signals):
             return True
@@ -123,9 +149,68 @@ class ProbelProductPage:
         return False
 
     def _get_freight_form_elements(self):
-        cep_input = self.wait.until(EC.presence_of_element_located(self.FREIGHT_CEP_INPUT))
-        form = cep_input.find_element(By.XPATH, "ancestor::form[1]")
-        button = form.find_element(*self.FREIGHT_CALC_BUTTON)
+        def _find_cep_input(driver):
+            for by, sel in self.FREIGHT_CEP_INPUT_FALLBACKS:
+                try:
+                    els = driver.find_elements(by, sel)
+                    for el in els:
+                        try:
+                            if el.is_displayed() and el.is_enabled():
+                                return el
+                        except Exception:
+                            continue
+                except Exception:
+                    continue
+            return None
+
+        cep_input = self.wait.until(lambda d: _find_cep_input(d))
+
+        # Some pages don't wrap it in a <form>. Keep a "container" that can be clicked to blur.
+        try:
+            form = cep_input.find_element(By.XPATH, "ancestor::form[1]")
+        except Exception:
+            form = cep_input.find_element(By.XPATH, "ancestor::*[self::section or self::div][1]")
+
+        button = None
+        # Prefer the original selector (most precise)
+        try:
+            button = form.find_element(*self.FREIGHT_CALC_BUTTON)
+        except Exception:
+            pass
+
+        if button is None:
+            # Fallbacks: a submit button near the CEP input within the same container.
+            button_candidates = []
+            try:
+                button_candidates.extend(form.find_elements(By.CSS_SELECTOR, "button[type='submit']"))
+            except Exception:
+                pass
+            try:
+                button_candidates.extend(form.find_elements(By.CSS_SELECTOR, "button[data-bind-no-frete='1']"))
+            except Exception:
+                pass
+            try:
+                button_candidates.extend(
+                    form.find_elements(
+                        By.XPATH,
+                        ".//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'frete') or "
+                        "contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'calcular') or "
+                        "contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'simular')]",
+                    )
+                )
+            except Exception:
+                pass
+
+            for b in button_candidates:
+                try:
+                    if b.is_displayed() and b.is_enabled():
+                        button = b
+                        break
+                except Exception:
+                    continue
+
+        if button is None:
+            raise RuntimeError("FREIGHT_BUTTON_NOT_FOUND")
 
         self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", form)
         time.sleep(0.2)

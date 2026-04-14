@@ -52,12 +52,21 @@ class FreightTestService:
                 result.status = "CEP_FIELD_NOT_FOUND"
                 result.errors.append(f"Timeout ao localizar campo CEP: {exc!r}")
                 raise
+            except RuntimeError as exc:
+                # Selector/content changed, or input did not receive the value.
+                result.status = "CEP_FIELD_NOT_FOUND"
+                result.errors.append(f"Falha ao preencher CEP: {exc!r}")
+                raise
 
             try:
                 page.calculate_freight()
             except TimeoutException as exc:
                 result.status = "FREIGHT_BUTTON_NOT_FOUND"
                 result.errors.append(f"Timeout ao clicar no botao de frete: {exc!r}")
+                raise
+            except RuntimeError as exc:
+                result.status = "FREIGHT_BUTTON_NOT_FOUND"
+                result.errors.append(f"Botao de frete nao encontrado: {exc!r}")
                 raise
 
             freight = page.read_freight_result()
