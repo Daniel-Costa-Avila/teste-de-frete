@@ -2,10 +2,12 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PORT=10000 \
+    PORT=8080 \
     HOST=0.0.0.0 \
     DEBUG=0 \
-    HEADLESS=1
+    HEADLESS=1 \
+    CHROME_BINARY_PATH=/usr/bin/chromium \
+    CHROMEDRIVER_PATH=/usr/bin/chromedriver
 
 # Chromium + driver (Debian)
 RUN apt-get update \
@@ -20,6 +22,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-EXPOSE 10000
-CMD ["gunicorn", "-b", "0.0.0.0:10000", "wsgi:app", "--workers", "1", "--threads", "8", "--timeout", "300"]
-
+EXPOSE 8080
+CMD ["sh", "-c", "gunicorn -b 0.0.0.0:${PORT:-8080} wsgi:app --workers 1 --threads 8 --timeout 300"]

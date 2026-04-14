@@ -29,3 +29,11 @@ Na home, baixe o template e envie a planilha `.xlsx`/`.csv` para executar em lot
 
 Este projeto usa Selenium/Chrome. Para rodar no Render, a opção mais simples é deploy via Docker (inclui Chromium + chromedriver) e usar `HEADLESS=1`.
 
+## Deploy no Firebase (Hosting + Cloud Run)
+
+O Firebase Hosting **não executa Python**. O caminho recomendado é:
+
+1) Deploy do backend (Flask + Selenium) no **Cloud Run** usando o `Dockerfile`
+2) Configurar o **Firebase Hosting** para fazer proxy (rewrite) para o Cloud Run
+
+Arquivos já incluídos no repositório: `firebase.json` (rewrite) e `public/`.
