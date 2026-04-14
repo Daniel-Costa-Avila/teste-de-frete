@@ -1,0 +1,38 @@
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+from dataclasses import replace as _replace
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+@dataclass(frozen=True)
+class Settings:
+    use_remote: bool = field(default_factory=lambda: _env_bool("USE_REMOTE", False))
+    selenoid_url: str = field(default_factory=lambda: os.getenv("SELENOID_URL", "http://localhost:4444/wd/hub"))
+    browser_name: str = field(default_factory=lambda: os.getenv("BROWSER_NAME", "chrome"))
+    browser_version: str = field(default_factory=lambda: os.getenv("BROWSER_VERSION", "128.0"))
+
+    chrome_binary_path: str | None = field(default_factory=lambda: os.getenv("CHROME_BINARY_PATH") or None)
+    chromedriver_path: str | None = field(default_factory=lambda: os.getenv("CHROMEDRIVER_PATH") or None)
+
+    headless: bool = field(default_factory=lambda: _env_bool("HEADLESS", False))
+    page_timeout_seconds: int = field(default_factory=lambda: int(os.getenv("PAGE_TIMEOUT_SECONDS", "60")))
+    wait_timeout_seconds: int = field(default_factory=lambda: int(os.getenv("WAIT_TIMEOUT_SECONDS", "25")))
+    slow_type_delay_ms: int = field(default_factory=lambda: int(os.getenv("SLOW_TYPE_DELAY_MS", "90")))
+    artifacts_dir: str = field(default_factory=lambda: os.getenv("ARTIFACTS_DIR", "artifacts"))
+    results_csv_path: str = field(
+        default_factory=lambda: os.getenv(
+            "RESULTS_CSV_PATH",
+            os.path.join(os.getenv("ARTIFACTS_DIR", "artifacts"), "results.csv"),
+        )
+    )
+
+    def with_overrides(self, **kwargs) -> "Settings":
+        return _replace(self, **kwargs)

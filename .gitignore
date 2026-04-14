@@ -1,0 +1,18 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# venvs
+.venv/
+.venv-1/
+
+# Selenium artifacts (keep product input templates)
+artifacts/*
+!artifacts/produtos_entrada_template.xlsx
+!artifacts/produtos_entrada_template.csv
+
+# selenoid local data
+selenoid/video/
+selenoid/logs/
+

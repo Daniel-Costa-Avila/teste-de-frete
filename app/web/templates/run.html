@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}Execução {{ job.id[:10] }}{% endblock %}
+
+{% block head %}
+  {% if auto_refresh %}
+    <meta http-equiv="refresh" content="2" />
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  <section class="card">
+    <div class="run-head">
+      <h2>Execução</h2>
+      <div class="badge badge-{{ job.status|lower }}">{{ job.status }}</div>
+    </div>
+
+    <div class="kv">
+      <div class="k">ID</div><div class="v mono">{{ job.id }}</div>
+      {% if job.batch_id %}
+        <div class="k">Lote</div><div class="v"><a class="link mono" href="{{ url_for('batch_detail', batch_id=job.batch_id) }}">{{ job.batch_id[:10] }}</a></div>
+      {% endif %}
+      {% if job.input_product_name %}
+        <div class="k">Produto (entrada)</div><div class="v">{{ job.input_product_name }}</div>
+      {% endif %}
+      {% if job.product_id %}
+        <div class="k">Produto ID</div><div class="v mono">{{ job.product_id }}</div>
+      {% endif %}
+      <div class="k">URL</div><div class="v"><a class="link" href="{{ job.url }}" target="_blank" rel="noreferrer">{{ job.url }}</a></div>
+      <div class="k">CEP</div><div class="v mono">{{ job.cep }}</div>
+      <div class="k">Headless</div><div class="v">{{ "sim" if job.headless else "não" }}</div>
+      <div class="k">Selenoid</div><div class="v">{{ "sim" if job.use_remote else "não" }}</div>
+      <div class="k">Criado</div><div class="v mono">{{ job.created_at }}</div>
+      <div class="k">Início</div><div class="v mono">{{ job.started_at or "-" }}</div>
+      <div class="k">Fim</div><div class="v mono">{{ job.finished_at or "-" }}</div>
+    </div>
+
+    {% if job.error %}
+      <div class="alert">{{ job.error }}</div>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Resultado</h2>
+    {% if json_pretty %}
+      <div class="actions">
+        <a class="link" href="{{ url_for('run_api', job_id=job.id) }}" target="_blank" rel="noreferrer">ver JSON</a>
+        {% if screenshot_url %}
+          <a class="link" href="{{ screenshot_url }}" target="_blank" rel="noreferrer">screenshot</a>
+        {% endif %}
+        {% if html_url %}
+          <a class="link" href="{{ html_url }}" target="_blank" rel="noreferrer">html</a>
+        {% endif %}
+      </div>
+      <pre class="code">{{ json_pretty }}</pre>
+    {% else %}
+      <div class="muted">
+        {% if auto_refresh %}
+          Rodando... esta página atualiza automaticamente.
+        {% else %}
+          Sem resultado.
+        {% endif %}
+      </div>
+    {% endif %}
+  </section>
+
+  {% if screenshot_url %}
+    <section class="card">
+      <h2>Screenshot</h2>
+      <div class="img-wrap">
+        <img src="{{ screenshot_url }}" alt="screenshot" />
+      </div>
+    </section>
+  {% endif %}
+{% endblock %}
+

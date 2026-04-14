@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Lote {{ batch_id[:10] }}{% endblock %}
+
+{% block head %}
+  {% if auto_refresh %}
+    <meta http-equiv="refresh" content="2" />
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  <section class="card">
+    <div class="run-head">
+      <h2>Lote</h2>
+      <div class="mono">{{ batch_id }}</div>
+    </div>
+    <div class="hint">
+      Este lote reúne várias execuções criadas na mesma submissão.
+      {% if auto_refresh %}Atualizando automaticamente...{% endif %}
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Execuções do lote</h2>
+    <div class="table">
+      <div class="tr th tr-batch">
+        <div>ID</div>
+        <div>Status</div>
+        <div>CEP</div>
+        <div>Produto</div>
+        <div>Abrir</div>
+      </div>
+      {% for j in jobs %}
+        <div class="tr tr-batch">
+          <div class="mono">{{ j.id[:10] }}</div>
+          <div class="badge badge-{{ j.status|lower }}">{{ j.status }}</div>
+          <div class="mono">{{ j.cep }}</div>
+          <div class="muted">
+            {% if j.input_product_name %}{{ j.input_product_name }}{% endif %}
+            {% if j.product_id %}<span class="mono">({{ j.product_id }})</span>{% endif %}
+          </div>
+          <div><a class="link" href="{{ url_for('run_detail', job_id=j.id) }}">ver</a></div>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}
+

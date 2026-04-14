@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="pt-br">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}Teste de Frete{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+    {% block head %}{% endblock %}
+  </head>
+  <body>
+    <div class="container">
+      <header class="header">
+        <div>
+          <a class="brand" href="{{ url_for('index') }}">Teste de Frete</a>
+          <div class="subtitle">Interface web para rodar o teste Selenium</div>
+        </div>
+        <div class="header-actions">
+          <a class="link" href="{{ url_for('health') }}" target="_blank" rel="noreferrer">health</a>
+        </div>
+      </header>
+
+      {% block content %}{% endblock %}
+    </div>
+  </body>
+</html>
+
