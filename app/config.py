@@ -21,6 +21,13 @@ class Settings:
 
     chrome_binary_path: str | None = field(default_factory=lambda: os.getenv("CHROME_BINARY_PATH") or None)
     chromedriver_path: str | None = field(default_factory=lambda: os.getenv("CHROMEDRIVER_PATH") or None)
+    chromedriver_verbose: bool = field(default_factory=lambda: _env_bool("CHROMEDRIVER_VERBOSE", False))
+    chromedriver_log_path: str = field(
+        default_factory=lambda: os.getenv(
+            "CHROMEDRIVER_LOG_PATH",
+            os.path.join(os.getenv("ARTIFACTS_DIR", "artifacts"), "chromedriver.log"),
+        )
+    )
 
     headless: bool = field(default_factory=lambda: _env_bool("HEADLESS", False))
     page_timeout_seconds: int = field(default_factory=lambda: int(os.getenv("PAGE_TIMEOUT_SECONDS", "60")))
