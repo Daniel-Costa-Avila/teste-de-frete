@@ -16,3 +16,15 @@ artifacts/*
 selenoid/video/
 selenoid/logs/
 
+# Firebase local
+.firebase/
+firebase-debug.log
+
+# Local tool folders
+.agents/
+.claude/
+skills-lock.json
+
+# Accidental firebase init dirs
+no/
+y/

@@ -11,10 +11,13 @@ def build_driver(settings: Settings) -> webdriver.Remote:
     options.add_argument("--window-size=1440,1200")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--no-sandbox")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-software-rasterizer")
     options.add_argument("--lang=pt-BR")
 
     if settings.headless:
-        options.add_argument("--headless=new")
+        # Prefer classic headless for better compatibility across Chromium builds.
+        options.add_argument("--headless")
 
     if settings.chrome_binary_path:
         options.binary_location = settings.chrome_binary_path

@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, send_from_directory, url_for
+from selenium.common.exceptions import WebDriverException
 
 from app.config import Settings
 from app.infra.driver_factory import build_driver
@@ -150,6 +151,13 @@ def _run_job(store: JobStore, job_id: str) -> None:
             append_result(settings.results_csv_path, result)
         except Exception as exc:
             store.update(job_id, error=f"Falha ao gravar CSV: {type(exc).__name__}: {exc!r}")
+    except WebDriverException as exc:
+        msg = f"{type(exc).__name__}: {exc!r}"
+        if getattr(exc, "msg", None):
+            msg += f" | WebDriver msg: {exc.msg}"
+        if settings.use_remote:
+            msg += f" (verifique SELENOID_URL={settings.selenoid_url} e se o Selenoid está rodando)"
+        store.update(job_id, status="ERROR", error=msg, finished_at=_utc_now_iso())
     except Exception as exc:
         msg = f"{type(exc).__name__}: {exc!r}"
         if settings.use_remote:
