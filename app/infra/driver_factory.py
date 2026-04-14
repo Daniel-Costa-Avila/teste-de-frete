@@ -44,10 +44,14 @@ def _collect_diagnostics(settings: Settings) -> str:
     if driver_candidates:
         driver_version = _run_version([driver_candidates[0], "--version"])
 
+    has_display = bool(os.getenv("DISPLAY") or os.getenv("WAYLAND_DISPLAY") or os.getenv("MIR_SOCKET"))
+    effective_headless = bool(settings.headless or (platform.system() != "Windows" and not has_display))
+
     return (
         "Diagnostics: "
         f"os={platform.platform()} "
         f"headless={settings.headless} "
+        f"effective_headless={effective_headless} "
         f"use_remote={settings.use_remote} "
         f"chrome_path={chrome_candidates[0] if chrome_candidates else None} "
         f"chromedriver_path={driver_candidates[0] if driver_candidates else None} "
@@ -59,6 +63,9 @@ def _collect_diagnostics(settings: Settings) -> str:
 def build_driver(settings: Settings) -> webdriver.Remote:
     options = Options()
 
+    has_display = bool(os.getenv("DISPLAY") or os.getenv("WAYLAND_DISPLAY") or os.getenv("MIR_SOCKET"))
+    effective_headless = bool(settings.headless or (platform.system() != "Windows" and not has_display))
+
     # stable behavior for ecommerce pages
     options.add_argument("--window-size=1440,1200")
     options.add_argument("--disable-dev-shm-usage")
@@ -68,7 +75,7 @@ def build_driver(settings: Settings) -> webdriver.Remote:
     options.add_argument("--remote-debugging-port=9222")
     options.add_argument("--lang=pt-BR")
 
-    if settings.headless:
+    if effective_headless:
         # Prefer classic headless for better compatibility across Chromium builds.
         options.add_argument("--headless")
 
