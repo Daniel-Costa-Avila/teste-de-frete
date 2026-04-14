@@ -79,7 +79,11 @@ class ProbelProductPage:
         _, _, button = self._get_freight_form_elements()
         self.wait.until(lambda d: button.is_displayed() and button.is_enabled())
         time.sleep(0.5)
-        button.click()
+        try:
+            button.click()
+        except Exception:
+            # Some pages overlay elements or use custom handlers; fallback to JS click.
+            self.driver.execute_script("arguments[0].click();", button)
 
     def read_freight_result(self) -> dict:
         form, _, _ = self._get_freight_form_elements()
@@ -149,68 +153,111 @@ class ProbelProductPage:
         return False
 
     def _get_freight_form_elements(self):
-        def _find_cep_input(driver):
+        def _is_visible(el) -> bool:
+            try:
+                return el.is_displayed() and el.is_enabled()
+            except Exception:
+                return False
+
+        def _find_by_fallbacks(driver):
             for by, sel in self.FREIGHT_CEP_INPUT_FALLBACKS:
                 try:
                     els = driver.find_elements(by, sel)
-                    for el in els:
-                        try:
-                            if el.is_displayed() and el.is_enabled():
-                                return el
-                        except Exception:
-                            continue
                 except Exception:
                     continue
+                for el in els:
+                    if _is_visible(el):
+                        return el
             return None
 
-        cep_input = self.wait.until(lambda d: _find_cep_input(d))
-
-        # Some pages don't wrap it in a <form>. Keep a "container" that can be clicked to blur.
-        try:
-            form = cep_input.find_element(By.XPATH, "ancestor::form[1]")
-        except Exception:
-            form = cep_input.find_element(By.XPATH, "ancestor::*[self::section or self::div][1]")
-
-        button = None
-        # Prefer the original selector (most precise)
-        try:
-            button = form.find_element(*self.FREIGHT_CALC_BUTTON)
-        except Exception:
-            pass
-
-        if button is None:
-            # Fallbacks: a submit button near the CEP input within the same container.
-            button_candidates = []
+        def _find_by_calculate_widget(driver):
+            # Many pages have a "Calcular Frete e prazo" widget with an input + button "Calcular o frete".
+            btn_xpath = (
+                "//button["
+                "contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'calcular')"
+                " and contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'frete')"
+                "]"
+            )
             try:
-                button_candidates.extend(form.find_elements(By.CSS_SELECTOR, "button[type='submit']"))
+                buttons = driver.find_elements(By.XPATH, btn_xpath)
             except Exception:
-                pass
-            try:
-                button_candidates.extend(form.find_elements(By.CSS_SELECTOR, "button[data-bind-no-frete='1']"))
-            except Exception:
-                pass
-            try:
-                button_candidates.extend(
-                    form.find_elements(
-                        By.XPATH,
-                        ".//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'frete') or "
-                        "contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'calcular') or "
-                        "contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'simular')]",
-                    )
-                )
-            except Exception:
-                pass
+                buttons = []
 
-            for b in button_candidates:
-                try:
-                    if b.is_displayed() and b.is_enabled():
-                        button = b
-                        break
-                except Exception:
+            for b in buttons:
+                if not _is_visible(b):
                     continue
 
-        if button is None:
-            raise RuntimeError("FREIGHT_BUTTON_NOT_FOUND")
+                container = None
+                for xp in ("ancestor::form[1]", "ancestor::section[1]", "ancestor::div[1]"):
+                    try:
+                        container = b.find_element(By.XPATH, xp)
+                        break
+                    except Exception:
+                        container = None
+
+                if container is None:
+                    continue
+
+                try:
+                    inputs = container.find_elements(By.XPATH, ".//input[not(@type='hidden')]")
+                except Exception:
+                    inputs = []
+
+                for inp in inputs:
+                    if _is_visible(inp):
+                        return container, inp, b
+
+            return None
+
+        found = self.wait.until(lambda d: _find_by_calculate_widget(d) or _find_by_fallbacks(d))
+
+        if isinstance(found, tuple):
+            form, cep_input, button = found
+        else:
+            cep_input = found
+            # Some pages don't wrap it in a <form>. Keep a "container" that can be clicked to blur.
+            try:
+                form = cep_input.find_element(By.XPATH, "ancestor::form[1]")
+            except Exception:
+                form = cep_input.find_element(By.XPATH, "ancestor::*[self::section or self::div][1]")
+
+            button = None
+            # Prefer the original selector (most precise)
+            try:
+                button = form.find_element(*self.FREIGHT_CALC_BUTTON)
+            except Exception:
+                button = None
+
+            if button is None:
+                # Fallbacks: a submit button near the CEP input within the same container.
+                button_candidates = []
+                try:
+                    button_candidates.extend(form.find_elements(By.CSS_SELECTOR, "button[type='submit']"))
+                except Exception:
+                    pass
+                try:
+                    button_candidates.extend(form.find_elements(By.CSS_SELECTOR, "button[data-bind-no-frete='1']"))
+                except Exception:
+                    pass
+                try:
+                    button_candidates.extend(
+                        form.find_elements(
+                            By.XPATH,
+                            ".//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'frete') or "
+                            "contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'calcular') or "
+                            "contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'simular')]",
+                        )
+                    )
+                except Exception:
+                    pass
+
+                for b in button_candidates:
+                    if _is_visible(b):
+                        button = b
+                        break
+
+            if button is None:
+                raise RuntimeError("FREIGHT_BUTTON_NOT_FOUND")
 
         self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", form)
         time.sleep(0.2)
