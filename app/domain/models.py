@@ -8,8 +8,15 @@ from typing import Optional
 class FreightResult:
     price: Optional[float] = None
     currency: str = "BRL"
+    # Canonical contract:
+    # - price == 0.0 => free shipping
+    # - price is None => unknown/unavailable
+    # price_kind makes the semantics explicit for clients.
+    price_kind: str = "UNKNOWN"  # FREE | PAID | UNKNOWN
+    price_text: Optional[str] = None
     delivery_time_text: Optional[str] = None
     delivery_mode: Optional[str] = None
+    options: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -31,4 +38,3 @@ class TestResult:
 
     def to_dict(self) -> dict:
         return asdict(self)
-

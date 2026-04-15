@@ -23,12 +23,36 @@ def generate_xlsx(path: Path) -> None:
     header_row = 3
     first_data_row = 4
 
-    headers = ["Nome do produto", "ID do produto", "Link do produto"]
+    headers = ["Grupo", "Nome do produto", "ID do produto", "Link do produto", "CEPs para testar"]
     examples = [
-        ["Colchão Casal Premium (Exemplo)", "PRD-000001", "https://exemplo.com.br/produtos/colchao-casal-premium"],
-        ["Travesseiro Ortopédico (Exemplo)", "PRD-000002", "https://exemplo.com.br/produtos/travesseiro-ortopedico"],
-        ["Cama Box Solteiro (Exemplo)", "PRD-000003", "https://exemplo.com.br/produtos/cama-box-solteiro"],
-        ["Protetor de Colchão Queen (Exemplo)", "PRD-000004", "https://exemplo.com.br/produtos/protetor-colchao-queen"],
+        [
+            "Grupo A (Exemplo)",
+            "Colchão Casal Premium (Exemplo)",
+            "PRD-000001",
+            "https://exemplo.com.br/produtos/colchao-casal-premium",
+            "01001-000, 20040-002",
+        ],
+        [
+            "Grupo A (Exemplo)",
+            "Travesseiro Ortopédico (Exemplo)",
+            "PRD-000002",
+            "https://exemplo.com.br/produtos/travesseiro-ortopedico",
+            "",
+        ],
+        [
+            "Grupo B (Exemplo)",
+            "Cama Box Solteiro (Exemplo)",
+            "PRD-000003",
+            "https://exemplo.com.br/produtos/cama-box-solteiro",
+            "79800-002",
+        ],
+        [
+            "Grupo B (Exemplo)",
+            "Protetor de Colchão Queen (Exemplo)",
+            "PRD-000004",
+            "https://exemplo.com.br/produtos/protetor-colchao-queen",
+            "04094-050; 30110-012",
+        ],
     ]
 
     # Styles
@@ -48,15 +72,15 @@ def generate_xlsx(path: Path) -> None:
     error_fill = PatternFill("solid", fgColor="FECACA")  # soft red
 
     # Title + info
-    ws.merge_cells(start_row=title_row, start_column=1, end_row=title_row, end_column=3)
-    ws.cell(row=title_row, column=1, value="Template de Produtos").font = title_font
+    ws.merge_cells(start_row=title_row, start_column=1, end_row=title_row, end_column=len(headers))
+    ws.cell(row=title_row, column=1, value="Template de Produtos (Grupos + CEPs)").font = title_font
     ws.cell(row=title_row, column=1).alignment = Alignment(horizontal="left", vertical="center")
 
-    ws.merge_cells(start_row=info_row, start_column=1, end_row=info_row, end_column=3)
+    ws.merge_cells(start_row=info_row, start_column=1, end_row=info_row, end_column=len(headers))
     ws.cell(
         row=info_row,
         column=1,
-        value="Preencha Nome e Link. O ID é para controle interno (não usar em pesquisas).",
+        value="Preencha Link. Opcional: Grupo e CEPs (se vazio, usa o CEP padrão informado na UI). O ID é para controle interno.",
     ).font = info_font
     ws.cell(row=info_row, column=1).alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
@@ -81,23 +105,24 @@ def generate_xlsx(path: Path) -> None:
             cell.alignment = body_alignment
             cell.border = border
 
-        # Make example link clickable
-        link_cell = ws.cell(row=r, column=3)
+        link_cell = ws.cell(row=r, column=4)
         if isinstance(link_cell.value, str) and link_cell.value.startswith(("http://", "https://")):
             link_cell.hyperlink = link_cell.value
             link_cell.style = "Hyperlink"
 
     # Column widths
-    ws.column_dimensions["A"].width = 44
-    ws.column_dimensions["B"].width = 18
-    ws.column_dimensions["C"].width = 70
+    ws.column_dimensions["A"].width = 22  # group
+    ws.column_dimensions["B"].width = 44  # name
+    ws.column_dimensions["C"].width = 18  # id
+    ws.column_dimensions["D"].width = 70  # url
+    ws.column_dimensions["E"].width = 28  # ceps
 
     # Freeze panes (keep title+info+header visible)
     ws.freeze_panes = f"A{first_data_row}"
 
     # Table (includes examples, user can keep adding rows)
     last_row = first_data_row + len(examples) - 1
-    table_ref = f"A{header_row}:C{last_row}"
+    table_ref = f"A{header_row}:E{last_row}"
     table = Table(displayName="TabelaProdutos", ref=table_ref)
     table_style = TableStyleInfo(
         name="TableStyleMedium9",
@@ -111,23 +136,23 @@ def generate_xlsx(path: Path) -> None:
 
     # Data validations (apply to a reasonable input range)
     max_rows = 1000
-    id_range = f"B{first_data_row}:B{max_rows}"
-    link_range = f"C{first_data_row}:C{max_rows}"
+    id_range = f"C{first_data_row}:C{max_rows}"
+    link_range = f"D{first_data_row}:D{max_rows}"
 
     dv_id = DataValidation(
         type="custom",
-        formula1=f'=AND(LEN(B{first_data_row})=10,LEFT(B{first_data_row},4)="PRD-",ISNUMBER(VALUE(RIGHT(B{first_data_row},6))))',
+        formula1=f'=AND(LEN(C{first_data_row})=10,LEFT(C{first_data_row},4)="PRD-",ISNUMBER(VALUE(RIGHT(C{first_data_row},6))))',
         allow_blank=True,
         showErrorMessage=True,
         errorTitle="ID inválido",
-        error='Use o formato PRD-000001 (PRD- + 6 dígitos).',
+        error="Use o formato PRD-000001 (PRD- + 6 dígitos).",
     )
     ws.add_data_validation(dv_id)
     dv_id.add(id_range)
 
     dv_link = DataValidation(
         type="custom",
-        formula1=f'=OR(LEFT(C{first_data_row},7)="http://",LEFT(C{first_data_row},8)="https://")',
+        formula1=f'=OR(LEFT(D{first_data_row},7)="http://",LEFT(D{first_data_row},8)="https://")',
         allow_blank=False,
         showErrorMessage=True,
         errorTitle="Link inválido",
@@ -136,24 +161,23 @@ def generate_xlsx(path: Path) -> None:
     ws.add_data_validation(dv_link)
     dv_link.add(link_range)
 
-    # Conditional formatting: highlight missing required fields (Nome/Link)
-    for col_letter, label in [("A", "Nome do produto"), ("C", "Link do produto")]:
-        rng = f"{col_letter}{first_data_row}:{col_letter}{max_rows}"
-        ws.conditional_formatting.add(
-            rng,
-            FormulaRule(
-                formula=[f'LEN(TRIM({col_letter}{first_data_row}))=0'],
-                fill=error_fill,
-                stopIfTrue=False,
-            ),
-        )
+    # Conditional formatting: highlight missing required fields (Link)
+    link_col = "D"
+    ws.conditional_formatting.add(
+        f"{link_col}{first_data_row}:{link_col}{max_rows}",
+        FormulaRule(
+            formula=[f'LEN(TRIM({link_col}{first_data_row}))=0'],
+            fill=error_fill,
+            stopIfTrue=False,
+        ),
+    )
 
     # Conditional formatting: highlight invalid ID (filled but doesn't match pattern)
     ws.conditional_formatting.add(
         id_range,
         FormulaRule(
             formula=[
-                f'AND(LEN(TRIM(B{first_data_row}))>0,NOT(AND(LEN(B{first_data_row})=10,LEFT(B{first_data_row},4)="PRD-",ISNUMBER(VALUE(RIGHT(B{first_data_row},6))))))'
+                f'AND(LEN(TRIM(C{first_data_row}))>0,NOT(AND(LEN(C{first_data_row})=10,LEFT(C{first_data_row},4)="PRD-",ISNUMBER(VALUE(RIGHT(C{first_data_row},6))))))'
             ],
             fill=warn_fill,
             stopIfTrue=False,
@@ -162,35 +186,28 @@ def generate_xlsx(path: Path) -> None:
 
     # Borders for a larger input area (keeps it looking like a sheet)
     for row in range(first_data_row, 51):
-        for col in range(1, 4):
+        for col in range(1, len(headers) + 1):
             cell = ws.cell(row=row, column=col)
             if cell.value is None:
-                cell.value = ""  # keep cells present for consistent formatting
+                cell.value = ""
             cell.alignment = body_alignment
             cell.border = border
 
-    # Make grid a bit nicer in Excel
     ws.sheet_view.showGridLines = False
 
-    # Ensure header names appear even if user sorts/filters
-    for col_idx in range(1, 4):
+    for col_idx in range(1, len(headers) + 1):
         ws.cell(row=header_row, column=col_idx).border = border
 
-    # Set print area (optional, but harmless)
     ws.print_title_rows = f"{title_row}:{header_row}"
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
 
-    # Auto-filter is handled by table; still set for safety
     ws.auto_filter.ref = table_ref
 
-    # Align columns
-    ws.column_dimensions["B"].bestFit = True
-    ws.column_dimensions["B"].hidden = False
+    ws.column_dimensions["C"].bestFit = True
+    ws.column_dimensions["C"].hidden = False
 
-    # Make sure we don't leave accidental styles outside intended columns
-    for col in range(1, 4):
-        col_letter = get_column_letter(col)
+    for col in range(1, len(headers) + 1):
         ws.cell(row=title_row, column=col).alignment = Alignment(horizontal="left", vertical="center")
         ws.cell(row=info_row, column=col).alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 

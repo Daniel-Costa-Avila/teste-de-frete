@@ -1,6 +1,7 @@
 import argparse
 import json
 import sys
+import uuid
 from app.config import Settings
 from app.infra.driver_factory import build_driver
 from app.infra.results_csv import append_result, ensure_results_csv
@@ -46,7 +47,7 @@ def run():
     driver = build_driver(settings)
     try:
         service = FreightTestService(driver, settings)
-        result = service.execute(url=url, cep=cep)
+        result = service.execute(url=url, cep=cep, artifact_prefix=uuid.uuid4().hex[:10])
         print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
         if results_csv_path:
             append_result(results_csv_path, result)

@@ -1,3 +1,4 @@
+import json
 import random
 import re
 import time
@@ -7,10 +8,15 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from app.infra.cep import normalize_cep
 
 
 class ProbelProductPage:
-    PRODUCT_TITLE = (By.CSS_SELECTOR, "h1")
+    PRODUCT_TITLE_SELECTORS = [
+        (By.CSS_SELECTOR, "h1.vtex-store-components-3-x-productNameContainer"),
+        (By.CSS_SELECTOR, "h1.vtex-store-components-3-x-productNameContainer span"),
+        (By.CSS_SELECTOR, "meta[property='og:title']"),
+    ]
     FREIGHT_CEP_INPUT = (By.CSS_SELECTOR, "input[data-bind-no-frete='1']")
     # Fallback selectors (site can change attributes/classes)
     FREIGHT_CEP_INPUT_FALLBACKS = [
@@ -32,14 +38,64 @@ class ProbelProductPage:
 
     def open(self, url: str) -> None:
         self.driver.get(url)
-        self.wait.until(EC.presence_of_element_located(self.PRODUCT_TITLE))
+        self.wait.until(lambda d: self._read_product_name() is not None)
 
     def get_product_name(self) -> str:
-        return self.wait.until(
-            EC.visibility_of_element_located(self.PRODUCT_TITLE)
-        ).text.strip()
+        name = self.wait.until(lambda d: self._read_product_name())
+        if not name:
+            raise RuntimeError("PRODUCT_NAME_NOT_FOUND")
+        return name
+
+    def _read_product_name(self) -> str | None:
+        try:
+            scripts = self.driver.find_elements(By.CSS_SELECTOR, "script[type='application/ld+json']")
+        except Exception:
+            scripts = []
+
+        for script in scripts:
+            raw = (script.get_attribute("textContent") or "").strip()
+            if not raw:
+                continue
+            try:
+                payload = json.loads(raw)
+            except Exception:
+                continue
+
+            items = payload if isinstance(payload, list) else [payload]
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                if str(item.get("@type", "")).lower() != "product":
+                    continue
+                name = item.get("name")
+                if isinstance(name, str) and name.strip():
+                    return name.strip()
+
+        try:
+            meta = self.driver.find_element(By.CSS_SELECTOR, "meta[property='og:title']")
+            content = (meta.get_attribute("content") or "").strip()
+            if content:
+                return re.sub(r"\s+-\s+Probel Colchões.*$", "", content).strip()
+        except Exception:
+            pass
+
+        for by, selector in self.PRODUCT_TITLE_SELECTORS[:2]:
+            try:
+                el = self.driver.find_element(by, selector)
+            except Exception:
+                continue
+            text = (el.text or "").strip()
+            if text:
+                return text
+
+        return None
+
+    def get_cep_value(self) -> str:
+        _, cep_input, _ = self._get_freight_form_elements()
+        return (cep_input.get_attribute("value") or "").strip()
 
     def fill_cep(self, cep: str) -> None:
+        cep = normalize_cep(cep)
         form, cep_input, _ = self._get_freight_form_elements()
         self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", cep_input)
         time.sleep(0.4)
@@ -75,6 +131,10 @@ class ProbelProductPage:
         # Small blur to trigger masked inputs / validators.
         form.click()
 
+        value = normalize_cep(cep_input.get_attribute("value") or "")
+        if value != cep:
+            raise RuntimeError(f"CEP_FIELD_VALUE_MISMATCH: expected={cep!r} actual={value!r}")
+
     def calculate_freight(self) -> None:
         _, _, button = self._get_freight_form_elements()
         self.wait.until(lambda d: button.is_displayed() and button.is_enabled())
@@ -101,28 +161,68 @@ class ProbelProductPage:
         self.wait.until(_has_rows)
 
         table = form.find_element(*self.FREIGHT_TABLE)
-        row = table.find_element(*self.FREIGHT_TABLE_ROW)
+        rows = table.find_elements(*self.FREIGHT_TABLE_ROW)
+        parsed_rows: list[dict] = []
+        for row in rows:
+            parsed = self._parse_freight_row(row)
+            if parsed is not None:
+                parsed_rows.append(parsed)
+
+        if not parsed_rows:
+            raise RuntimeError("FREIGHT_RESULT_NOT_FOUND")
+
+        options = [dict(row) for row in parsed_rows]
+        summary = dict(options[0])
+        summary["options"] = options
+        return summary
+
+    def _parse_freight_row(self, row) -> dict | None:
         cells = row.find_elements(By.CSS_SELECTOR, "td")
         cell_texts = [c.text.strip() for c in cells if c.text and c.text.strip()]
-        text_blob = " ".join(cell_texts) if cell_texts else (row.text or "")
+        text_blob = " ".join(cell_texts) if cell_texts else ((row.text or "").strip())
+        if not text_blob:
+            return None
 
         prazo_match = re.search(r"Em at\u00e9\s+\d+\s+dias?\s+\u00fateis", text_blob, flags=re.IGNORECASE)
         modo_match = re.search(r"\b(Normal|Expresso|Econ\u00f4mico)\b", text_blob, flags=re.IGNORECASE)
         price_match = re.search(r"R\$\s?(\d{1,3}(?:\.\d{3})*,\d{2})", text_blob)
+        is_free = re.search(r"\bgr[a\u00e1]tis\b", text_blob, flags=re.IGNORECASE) is not None
 
         price = None
         if not price_match:
             # Sometimes the currency parts are split into spans; fall back to textContent.
             text_content = row.get_attribute("textContent") or ""
             price_match = re.search(r"R\$\s?(\d{1,3}(?:\.\d{3})*,\d{2})", text_content)
+            if not is_free:
+                is_free = re.search(r"\bgr[a\u00e1]tis\b", text_content, flags=re.IGNORECASE) is not None
         if price_match:
             raw = price_match.group(1).replace(".", "").replace(",", ".")
             price = float(Decimal(raw))
+        elif is_free:
+            price = 0.0
+
+        price_kind = "UNKNOWN"
+        if price is None:
+            price_kind = "UNKNOWN"
+        elif is_free or price == 0.0:
+            price_kind = "FREE"
+        else:
+            price_kind = "PAID"
+
+        price_text = None
+        for t in reversed(cell_texts):
+            if t:
+                price_text = t
+                break
+        if not price_text:
+            price_text = text_blob or None
 
         return {
             "delivery_time_text": prazo_match.group(0) if prazo_match else None,
             "delivery_mode": modo_match.group(1) if modo_match else None,
-            "price": price
+            "price": price,
+            "price_kind": price_kind,
+            "price_text": price_text,
         }
 
     def is_blocked(self) -> bool:

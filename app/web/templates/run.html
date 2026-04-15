@@ -20,6 +20,9 @@
       {% if job.batch_id %}
         <div class="k">Lote</div><div class="v"><a class="link mono" href="{{ url_for('batch_detail', batch_id=job.batch_id) }}">{{ job.batch_id[:10] }}</a></div>
       {% endif %}
+      {% if job.group %}
+        <div class="k">Grupo</div><div class="v">{{ job.group }}</div>
+      {% endif %}
       {% if job.input_product_name %}
         <div class="k">Produto (entrada)</div><div class="v">{{ job.input_product_name }}</div>
       {% endif %}
@@ -43,8 +46,37 @@
   <section class="card">
     <h2>Resultado</h2>
     {% if json_pretty %}
+      {% if job.result and job.result.freight %}
+        <div class="kv">
+          <div class="k">Frete</div><div class="v">{{ job.result.freight|format_freight_price }}</div>
+          <div class="k">Prazo</div><div class="v">{{ job.result.freight.delivery_time_text or "-" }}</div>
+          <div class="k">Modalidade</div><div class="v">{{ job.result.freight.delivery_mode or "-" }}</div>
+        </div>
+        {% if job.result.freight.options and job.result.freight.options|length > 1 %}
+          <h3>Opções de frete</h3>
+          <div class="table">
+            <div class="tr th">
+              <div>Prazo</div>
+              <div>Modalidade</div>
+              <div>Preço</div>
+              <div>Tipo</div>
+              <div>Texto</div>
+            </div>
+            {% for option in job.result.freight.options %}
+              <div class="tr">
+                <div>{{ option.delivery_time_text or "-" }}</div>
+                <div>{{ option.delivery_mode or "-" }}</div>
+                <div>{{ option.price_text or (option.price if option.price is not none else "-") }}</div>
+                <div>{{ option.price_kind or "-" }}</div>
+                <div class="muted">{{ option.price_text or "-" }}</div>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endif %}
       <div class="actions">
         <a class="link" href="{{ url_for('run_api', job_id=job.id) }}" target="_blank" rel="noreferrer">ver JSON</a>
+        <a class="link" href="{{ url_for('run_results_xlsx', job_id=job.id) }}">baixar XLSX</a>
         {% if screenshot_url %}
           <a class="link" href="{{ screenshot_url }}" target="_blank" rel="noreferrer">screenshot</a>
         {% endif %}
@@ -73,4 +105,3 @@
     </section>
   {% endif %}
 {% endblock %}
-

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from io import BytesIO
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -12,7 +13,9 @@ from selenium.common.exceptions import WebDriverException
 
 from app.config import Settings
 from app.infra.driver_factory import build_driver
+from app.infra.cep import normalize_cep
 from app.infra.results_csv import append_result
+from app.infra.results_xlsx import build_results_workbook
 from app.infra.product_sheet import parse_products_file
 from app.services.freight_test_service import FreightTestService
 
@@ -40,13 +43,16 @@ class JobStore:
         headless: bool,
         use_remote: bool,
         batch_id: str | None = None,
+        group: str | None = None,
         product_id: str | None = None,
         input_product_name: str | None = None,
     ) -> str:
         job_id = uuid.uuid4().hex
+        cep = normalize_cep(cep)
         job = {
             "id": job_id,
             "batch_id": batch_id,
+            "group": group,
             "url": url,
             "cep": cep,
             "headless": headless,
@@ -86,7 +92,7 @@ class JobStore:
                 def _match(job: dict[str, Any]) -> bool:
                     hay = " ".join(
                         str(job.get(k) or "")
-                        for k in ("id", "batch_id", "url", "cep", "status", "product_id", "input_product_name")
+                        for k in ("id", "batch_id", "group", "url", "cep", "status", "product_id", "input_product_name")
                     ).lower()
                     return needle in hay
 
@@ -145,7 +151,7 @@ def _run_job(store: JobStore, job_id: str) -> None:
     try:
         driver = build_driver(settings)
         service = FreightTestService(driver, settings)
-        result = service.execute(url=job["url"], cep=job["cep"])
+        result = service.execute(url=job["url"], cep=job["cep"], artifact_prefix=job_id)
         store.update(job_id, status="DONE", result=result.to_dict(), finished_at=_utc_now_iso())
         try:
             append_result(settings.results_csv_path, result)
@@ -176,6 +182,32 @@ def create_app() -> Flask:
     app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024  # 5MB
     store = JobStore()
 
+    def _format_money(amount: float, currency: str) -> str:
+        currency = (currency or "BRL").upper()
+        if currency == "BRL":
+            # 1234.5 -> R$ 1.234,50
+            s = f"{amount:,.2f}"
+            s = s.replace(",", "X").replace(".", ",").replace("X", ".")
+            return f"R$ {s}"
+        return f"{currency} {amount:.2f}"
+
+    @app.template_filter("format_freight_price")
+    def format_freight_price(freight: Any) -> str:
+        if not isinstance(freight, dict):
+            return "-"
+        kind = str(freight.get("price_kind") or "").upper()
+        price = freight.get("price")
+        currency = str(freight.get("currency") or "BRL")
+
+        if kind == "FREE" or price == 0 or price == 0.0:
+            return "Grátis"
+        if price is None:
+            return str(freight.get("price_text") or "-")
+        try:
+            return _format_money(float(price), currency)
+        except Exception:
+            return str(freight.get("price_text") or price)
+
     @app.get("/")
     def index():
         settings = Settings()
@@ -196,7 +228,7 @@ def create_app() -> Flask:
     @app.post("/run")
     def run_test():
         url = (request.form.get("url") or "").strip()
-        cep = (request.form.get("cep") or "").strip()
+        cep = normalize_cep(request.form.get("cep"))
         if not url or not cep:
             abort(400, "Informe URL e CEP.")
 
@@ -210,7 +242,7 @@ def create_app() -> Flask:
 
     @app.post("/run-batch")
     def run_batch():
-        cep_default = (request.form.get("cep") or "").strip()
+        cep_default = normalize_cep(request.form.get("cep"))
         raw_items = (request.form.get("items") or "").strip()
         if not raw_items:
             abort(400, "Informe ao menos 1 URL.")
@@ -232,7 +264,7 @@ def create_app() -> Flask:
             url = (item.get("url") or "").strip()
             if not url.startswith(("http://", "https://")):
                 continue
-            cep = (item.get("cep") or cep_default).strip()
+            cep = normalize_cep(item.get("cep") or cep_default)
             if not cep:
                 continue
             job_id = store.create(
@@ -269,7 +301,7 @@ def create_app() -> Flask:
 
     @app.post("/run-products-sheet")
     def run_products_sheet():
-        cep_default = (request.form.get("cep") or "").strip()
+        cep_default = normalize_cep(request.form.get("cep"))
         if not cep_default:
             abort(400, "Informe o CEP.")
 
@@ -292,23 +324,35 @@ def create_app() -> Flask:
             abort(400, "Planilha muito grande (máximo: 50 linhas).")
 
         batch_id = uuid.uuid4().hex
+        total_jobs = 0
+        for r in rows:
+            ceps = getattr(r, "ceps", None) or ()
+            total_jobs += len(ceps) if ceps else 1
+        if total_jobs > 200:
+            abort(400, "Planilha gera muitas execuÃ§Ãµes (mÃ¡ximo: 200). Reduza CEPs/linhas.")
+
         created: list[str] = []
         for r in rows:
             url = (r.url or "").strip()
             if not url.startswith(("http://", "https://")):
                 continue
-            job_id = store.create(
-                url=url,
-                cep=cep_default,
-                headless=headless,
-                use_remote=use_remote,
-                batch_id=batch_id,
-                product_id=(r.product_id or "").strip() or None,
-                input_product_name=(r.product_name or "").strip() or None,
-            )
-            created.append(job_id)
-            t = threading.Thread(target=_run_job, args=(store, job_id), daemon=True)
-            t.start()
+            group = (getattr(r, "group", "") or "").strip() or None
+            ceps = getattr(r, "ceps", None) or ()
+            ceps_to_run = list(ceps) if ceps else [cep_default]
+            for cep in ceps_to_run:
+                job_id = store.create(
+                    url=url,
+                    cep=normalize_cep(cep),
+                    headless=headless,
+                    use_remote=use_remote,
+                    batch_id=batch_id,
+                    group=group,
+                    product_id=(r.product_id or "").strip() or None,
+                    input_product_name=(r.product_name or "").strip() or None,
+                )
+                created.append(job_id)
+                t = threading.Thread(target=_run_job, args=(store, job_id), daemon=True)
+                t.start()
 
         if not created:
             abort(400, "Nenhuma URL válida encontrada na planilha.")
@@ -327,6 +371,20 @@ def create_app() -> Flask:
             batch_id=batch_id,
             jobs=jobs,
             auto_refresh=running,
+        )
+
+    @app.get("/batches/<batch_id>/results.xlsx")
+    def batch_results_xlsx(batch_id: str):
+        jobs = store.list_by_batch(batch_id)
+        if not jobs:
+            abort(404)
+
+        data = build_results_workbook(jobs)
+        return send_file(
+            BytesIO(data),
+            as_attachment=True,
+            download_name=f"batch_{batch_id[:10]}_results.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
     @app.get("/runs/<job_id>")
@@ -369,6 +427,20 @@ def create_app() -> Flask:
             json_pretty=json_pretty,
             screenshot_url=screenshot_url,
             html_url=html_url,
+        )
+
+    @app.get("/runs/<job_id>/results.xlsx")
+    def run_results_xlsx(job_id: str):
+        job = store.get(job_id)
+        if not job:
+            abort(404)
+
+        data = build_results_workbook([job])
+        return send_file(
+            BytesIO(data),
+            as_attachment=True,
+            download_name=f"run_{job_id[:10]}_results.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
     @app.get("/api/runs/<job_id>")

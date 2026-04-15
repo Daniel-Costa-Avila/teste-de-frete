@@ -11,40 +11,42 @@ _WRITE_LOCK = threading.Lock()
 
 
 CSV_COLUMNS: list[str] = [
-    "run_at",
-    "source",
-    "url",
-    "cep",
-    "status",
-    "product_name",
-    "freight_price",
-    "freight_currency",
-    "freight_delivery_time_text",
-    "freight_delivery_mode",
-    "errors",
-    "artifact_screenshot",
-    "artifact_html",
+    "Data da execução",
+    "Fonte",
+    "URL",
+    "CEP",
+    "Produto",
+    "Valor do frete",
+    "Moeda",
+    "Tipo do frete",
+    "Prazo de entrega",
+    "Modo de entrega",
 ]
 
 
+def _format_price_kind(value: str | None) -> str:
+    kind = str(value or "").upper()
+    if kind == "FREE":
+        return "Grátis"
+    if kind == "PAID":
+        return "Pago"
+    return "Indisponível"
+
+
 def _flatten_result(result: TestResult) -> dict[str, str]:
-    errors = " | ".join(result.errors) if result.errors else ""
     price = "" if result.freight.price is None else str(result.freight.price)
 
     return {
-        "run_at": datetime.now().isoformat(timespec="seconds"),
-        "source": result.source,
-        "url": result.url,
-        "cep": result.cep,
-        "status": result.status,
-        "product_name": result.product_name or "",
-        "freight_price": price,
-        "freight_currency": result.freight.currency or "",
-        "freight_delivery_time_text": result.freight.delivery_time_text or "",
-        "freight_delivery_mode": result.freight.delivery_mode or "",
-        "errors": errors,
-        "artifact_screenshot": result.artifacts.screenshot or "",
-        "artifact_html": result.artifacts.html or "",
+        "Data da execução": datetime.now().isoformat(timespec="seconds"),
+        "Fonte": result.source,
+        "URL": result.url,
+        "CEP": result.cep,
+        "Produto": result.product_name or "",
+        "Valor do frete": price,
+        "Moeda": result.freight.currency or "",
+        "Tipo do frete": _format_price_kind(result.freight.price_kind),
+        "Prazo de entrega": result.freight.delivery_time_text or "",
+        "Modo de entrega": result.freight.delivery_mode or "",
     }
 
 
@@ -69,4 +71,3 @@ def append_result(path: str, result: TestResult) -> None:
         with open(path, "a", encoding="utf-8-sig", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS, delimiter=";")
             writer.writerow(row)
-

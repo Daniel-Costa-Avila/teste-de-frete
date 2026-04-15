@@ -18,6 +18,9 @@
       Este lote reúne várias execuções criadas na mesma submissão.
       {% if auto_refresh %}Atualizando automaticamente...{% endif %}
     </div>
+    <div class="actions" style="margin-top: 12px;">
+      <a class="link" href="{{ url_for('batch_results_xlsx', batch_id=batch_id) }}">Baixar XLSX</a>
+    </div>
   </section>
 
   <section class="card">
@@ -27,6 +30,7 @@
         <div>ID</div>
         <div>Status</div>
         <div>CEP</div>
+        <div>Grupo</div>
         <div>Produto</div>
         <div>Abrir</div>
       </div>
@@ -35,6 +39,7 @@
           <div class="mono">{{ j.id[:10] }}</div>
           <div class="badge badge-{{ j.status|lower }}">{{ j.status }}</div>
           <div class="mono">{{ j.cep }}</div>
+          <div class="muted">{{ j.group or "-" }}</div>
           <div class="muted">
             {% if j.input_product_name %}{{ j.input_product_name }}{% endif %}
             {% if j.product_id %}<span class="mono">({{ j.product_id }})</span>{% endif %}
@@ -45,4 +50,3 @@
     </div>
   </section>
 {% endblock %}
-
