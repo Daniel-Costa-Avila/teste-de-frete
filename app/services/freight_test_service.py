@@ -1,4 +1,5 @@
 import os
+import uuid
 from urllib.parse import urlparse
 from selenium.common.exceptions import InvalidSessionIdException, TimeoutException, WebDriverException
 from app.infra.cep import normalize_cep
@@ -63,6 +64,7 @@ class FreightTestService:
 
     def execute(self, url: str, cep: str, artifact_prefix: str | None = None) -> TestResult:
         cep = normalize_cep(cep)
+        artifact_prefix = artifact_prefix or uuid.uuid4().hex[:12]
         source, page = self._select_page(url)
         result = TestResult(
             source=source,

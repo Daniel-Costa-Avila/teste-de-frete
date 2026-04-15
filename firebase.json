@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "agente-de-frete",
     "public": "public",
     "ignore": [
       "firebase.json",
