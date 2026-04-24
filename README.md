@@ -50,3 +50,21 @@ O Firebase Hosting **não executa Python**. O caminho recomendado é:
 2) Configurar o **Firebase Hosting** para fazer proxy (rewrite) para o Cloud Run
 
 Arquivos já incluídos no repositório: `firebase.json` (rewrite) e `public/`.
+
+## Deploy no Azure (recomendado: App Service como Container)
+
+Este projeto depende de Chromium + chromedriver (Selenium). O jeito mais confiável de rodar no Azure é publicar como
+**container** (o `Dockerfile` já instala as dependências).
+
+### Azure App Service (Web App for Containers)
+
+1) Crie um **Web App for Containers** (Linux).
+2) Configure o deploy apontando para o `Dockerfile` (GitHub Actions / ACR).
+3) Em **Configurações → Variáveis de ambiente (App settings)**, defina:
+
+- `WEBSITES_PORT=8080`
+- `PORT=8080`
+- `HEADLESS=1`
+- `DEBUG=0`
+
+O start do app usa `startup.sh` e respeita `PORT`/`WEBSITES_PORT`.
