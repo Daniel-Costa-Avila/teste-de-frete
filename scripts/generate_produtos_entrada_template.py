@@ -211,7 +211,10 @@ def generate_xlsx(path: Path) -> None:
         ws.cell(row=title_row, column=col).alignment = Alignment(horizontal="left", vertical="center")
         ws.cell(row=info_row, column=col).alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
-    wb.save(path)
+    try:
+        wb.save(path)
+    finally:
+        wb.close()
 
 
 def main() -> None:

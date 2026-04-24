@@ -1,148 +1,103 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <section class="card">
-    <h2>Rodar teste</h2>
-    <form method="post" action="{{ url_for('run_test') }}" class="form">
-      <label class="field">
-        <div class="label">URL do produto</div>
-        <input name="url" type="url" required value="{{ default_url }}" />
-      </label>
-
-      <label class="field">
-        <div class="label">CEP</div>
-        <input name="cep" type="text" required value="{{ default_cep }}" placeholder="00000-000" />
-      </label>
-
-      <div class="row">
-        <label class="check">
-          <input name="headless" type="checkbox" value="1" {% if defaults.headless %}checked{% endif %} />
-          <span>Headless</span>
-        </label>
-        <label class="check">
-          <input name="use_remote" type="checkbox" value="1" {% if defaults.use_remote %}checked{% endif %} />
-          <span>Usar Selenoid (remoto)</span>
-        </label>
-      </div>
-
-      <div class="actions">
-        <button class="btn" type="submit">Executar</button>
-      </div>
-      <div class="hint">
-        Dica: se marcar “Usar Selenoid”, inicie com <code>docker compose up -d</code>.
-      </div>
-    </form>
-  </section>
-
-  <section class="card">
-    <h2>Rodar em lote</h2>
-    <form method="post" action="{{ url_for('run_batch') }}" class="form">
-      <label class="field">
-        <div class="label">Itens (1 por linha)</div>
-        <textarea name="items" required rows="7" placeholder="url&#10;produto_id;url&#10;nome;produto_id;url&#10;nome;produto_id;url;cep"></textarea>
-      </label>
-
-      <label class="field">
-        <div class="label">CEP padrão (usado quando a linha não tiver CEP)</div>
-        <input name="cep" type="text" required value="{{ default_cep }}" placeholder="00000-000" />
-      </label>
-
-      <div class="row">
-        <label class="check">
-          <input name="headless" type="checkbox" value="1" {% if defaults.headless %}checked{% endif %} />
-          <span>Headless</span>
-        </label>
-        <label class="check">
-          <input name="use_remote" type="checkbox" value="1" {% if defaults.use_remote %}checked{% endif %} />
-          <span>Usar Selenoid (remoto)</span>
-        </label>
-      </div>
-
-      <div class="actions">
-        <button class="btn" type="submit">Executar lote</button>
-      </div>
-      <div class="hint">
-        Formatos aceitos (separador <code>;</code>): <code>url</code>, <code>id;url</code>, <code>nome;id;url</code>, <code>nome;id;url;cep</code>. Linhas vazias e <code># comentários</code> são ignorados.
-      </div>
-    </form>
-  </section>
-
-  <section class="card">
-    <h2>Planilha de produtos</h2>
-    <div class="hint">
-      Baixe o template:
-      <a class="link" href="{{ url_for('template_produtos_xlsx') }}">XLSX</a>
-      ou
-      <a class="link" href="{{ url_for('template_produtos_csv') }}">CSV</a>.
+  <section class="hero-shell">
+    <div class="hero-title-wrap">
+      <p class="kicker">Central de Auditoria</p>
+      <h1>Teste de Frete com foco operacional</h1>
+      <p class="hero-subtext">Rode testes unitarios em lote por planilha e exporte os dados de validacao.</p>
     </div>
-    <form method="post" action="{{ url_for('run_products_sheet') }}" enctype="multipart/form-data" class="form">
-      <label class="field">
-        <div class="label">Enviar planilha (.xlsx ou .csv)</div>
-        <input name="sheet" type="file" accept=".xlsx,.csv" required />
-      </label>
-
-      <label class="field">
-        <div class="label">CEP padrão</div>
-        <input name="cep" type="text" required value="{{ default_cep }}" placeholder="00000-000" />
-      </label>
-
-      <div class="row">
-        <label class="check">
-          <input name="headless" type="checkbox" value="1" {% if defaults.headless %}checked{% endif %} />
-          <span>Headless</span>
-        </label>
-        <label class="check">
-          <input name="use_remote" type="checkbox" value="1" {% if defaults.use_remote %}checked{% endif %} />
-          <span>Usar Selenoid (remoto)</span>
-        </label>
-      </div>
-
-      <div class="actions">
-        <button class="btn" type="submit">Executar planilha</button>
-      </div>
-      <div class="hint">
-        Colunas aceitas: <code>Grupo</code>, <code>Nome do produto</code>, <code>ID do produto</code>, <code>Link do produto</code>, <code>CEPs para testar</code>.
-        Se <code>CEPs para testar</code> estiver vazio, o sistema usa o CEP padrÃ£o informado acima.
-      </div>
-    </form>
+    <div class="hero-badges">
+      <span class="hero-badge">Fluxo em 2 etapas</span>
+      <span class="hero-badge">Resultado em XLSX</span>
+      <span class="hero-badge">Monitoramento continuo</span>
+    </div>
   </section>
 
-  <section class="card">
-    <h2>Execuções recentes</h2>
-    <form method="get" action="{{ url_for('index') }}" class="form form-inline">
-      <label class="field">
-        <div class="label">Pesquisar</div>
-        <input name="q" type="text" value="{{ q or '' }}" placeholder="id, status, cep, url..." />
-      </label>
-      <div class="actions">
-        <button class="btn" type="submit">Filtrar</button>
-        {% if q %}
-          <a class="link" href="{{ url_for('index') }}">limpar</a>
-        {% endif %}
-      </div>
-    </form>
+  <section class="workspace-grid">
+    <aside class="side-rail card">
+      <h3>Painel rapido</h3>
+      <p class="rail-text">Acesse direto cada fluxo sem rolar a tela toda.</p>
 
-    {% if jobs %}
-      <div class="table">
-        <div class="tr th tr-index">
-          <div>ID</div>
-          <div>Status</div>
-          <div>CEP</div>
-          <div>URL</div>
-          <div>Abrir</div>
-        </div>
-        {% for j in jobs %}
-          <div class="tr tr-index">
-            <div class="mono">{{ j.id[:10] }}</div>
-            <div class="badge badge-{{ j.status|lower }}">{{ j.status }}</div>
-            <div class="mono">{{ j.cep }}</div>
-            <div class="muted"><a class="link" href="{{ j.url }}" target="_blank" rel="noreferrer">{{ j.url }}</a></div>
-            <div><a class="link" href="{{ url_for('run_detail', job_id=j.id) }}">ver</a></div>
-          </div>
-        {% endfor %}
+      <nav class="rail-nav">
+        <a class="rail-link" href="#single-run">Teste unico</a>
+        <a class="rail-link" href="#sheet-run">Lote por planilha</a>
+      </nav>
+
+      <div class="rail-block">
+        <p class="rail-label">Saude da API</p>
+        <a class="link" href="{{ url_for('health') }}" target="_blank" rel="noreferrer">Abrir endpoint health</a>
       </div>
-    {% else %}
-      <div class="muted">Nenhuma execução ainda.</div>
-    {% endif %}
+
+      <div class="rail-hint">
+        Dica: use o painel acima para navegar rapidamente entre os fluxos.
+      </div>
+    </aside>
+
+    <div class="main-stack">
+      <section id="single-run" class="card card-spotlight">
+        <div class="section-head">
+          <h2>Teste unico</h2>
+          <p>Validacao imediata de uma URL de produto.</p>
+        </div>
+
+        <form method="post" action="{{ url_for('run_test') }}" class="form">
+          <label class="field">
+            <div class="label">URL do produto</div>
+            <input name="url" type="url" required value="{{ default_url }}" placeholder="https://site.com/produto" />
+            <small class="field-help">Use a URL final da pagina de produto.</small>
+          </label>
+
+          <label class="field">
+            <div class="label">CEP</div>
+            <input name="cep" type="text" required value="{{ default_cep }}" placeholder="00000-000" />
+          </label>
+
+          <div class="actions">
+            <button class="btn" type="submit">Executar teste</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="sheet-run" class="card">
+        <div class="section-head">
+          <h2>Lote por planilha</h2>
+          <p>Importe .xlsx ou .csv para auditar multiplos produtos.</p>
+        </div>
+
+        <div class="hint">
+          Baixe o template:
+          <a class="link" href="{{ url_for('template_produtos_xlsx') }}">XLSX</a>
+          ou
+          <a class="link" href="{{ url_for('template_produtos_csv') }}">CSV</a>.
+        </div>
+
+        <form method="post" action="{{ url_for('run_products_sheet') }}" enctype="multipart/form-data" class="form">
+          <label class="field">
+            <div class="label">Enviar planilha (.xlsx ou .csv)</div>
+            <input name="sheet" type="file" accept=".xlsx,.csv" required />
+          </label>
+
+          <label class="field">
+            <div class="label">CEP padrao</div>
+            <input name="cep" type="text" required value="{{ default_cep }}" placeholder="00000-000" />
+          </label>
+
+          <div class="actions">
+            <button class="btn" type="submit">Executar planilha</button>
+          </div>
+
+          <div class="checklist">
+            <div class="check-item">Arquivo com extensao .xlsx ou .csv</div>
+            <div class="check-item">Campo de link do produto preenchido</div>
+            <div class="check-item">CEP por linha e opcional (usa CEP padrao quando vazio)</div>
+          </div>
+
+          <div class="hint">
+            Colunas aceitas: <code>Grupo</code>, <code>Nome do produto</code>, <code>ID do produto</code>, <code>Link do produto</code>, <code>CEPs para testar</code>.
+          </div>
+        </form>
+      </section>
+    </div>
   </section>
 {% endblock %}

@@ -30,6 +30,15 @@ class ProbelProductPage:
     FREIGHT_CALC_BUTTON = (By.CSS_SELECTOR, "button[type='submit'][data-bind-no-frete='1']")
     FREIGHT_TABLE = (By.CSS_SELECTOR, "table.taace8-shipping-simulator-1-x-shippingTable")
     FREIGHT_TABLE_ROW = (By.CSS_SELECTOR, "tbody.taace8-shipping-simulator-1-x-shippingTableBody tr")
+    FREIGHT_NEGATIVE_SIGNALS = (
+        "indisponível",
+        "indisponivel",
+        "não disponível",
+        "nao disponivel",
+        "não foi possível",
+        "nao foi possivel",
+        "erro ao calcular",
+    )
 
     def __init__(self, driver: WebDriver, timeout: int = 25, slow_type_delay_ms: int = 90):
         self.driver = driver
@@ -148,25 +157,43 @@ class ProbelProductPage:
     def read_freight_result(self) -> dict:
         form, _, _ = self._get_freight_form_elements()
 
-        def _has_rows(driver):
+        def _has_rows_or_signals(driver):
             try:
-                table = form.find_element(*self.FREIGHT_TABLE)
-                if not table.is_displayed():
-                    return False
-                rows = table.find_elements(*self.FREIGHT_TABLE_ROW)
-                return len(rows) > 0
+                rows = self._extract_candidate_rows(form)
+                if rows:
+                    return True
             except Exception:
+                pass
+            try:
+                text = (form.text or "").strip()
+            except Exception:
+                text = ""
+            if not text:
                 return False
+            return bool(
+                re.search(r"R\$\s?\d", text)
+                or re.search(r"\bgr[aá]tis\b", text, flags=re.IGNORECASE)
+                or re.search(r"\bentrega\b", text, flags=re.IGNORECASE)
+                or re.search(r"\bretira", text, flags=re.IGNORECASE)
+            )
 
-        self.wait.until(_has_rows)
+        self.wait.until(_has_rows_or_signals)
 
-        table = form.find_element(*self.FREIGHT_TABLE)
-        rows = table.find_elements(*self.FREIGHT_TABLE_ROW)
+        rows = self._extract_candidate_rows(form)
         parsed_rows: list[dict] = []
         for row in rows:
             parsed = self._parse_freight_row(row)
             if parsed is not None:
                 parsed_rows.append(parsed)
+
+        if not parsed_rows:
+            # Fallback: parse plain text blocks in case the shipping widget no longer renders <tr>.
+            text = (form.text or "").strip()
+            chunks = [c.strip() for c in re.split(r"(?:\n\s*){2,}", text) if c.strip()]
+            for chunk in chunks:
+                parsed = self._parse_freight_text(chunk)
+                if parsed is not None:
+                    parsed_rows.append(parsed)
 
         if not parsed_rows:
             raise RuntimeError("FREIGHT_RESULT_NOT_FOUND")
@@ -176,30 +203,89 @@ class ProbelProductPage:
         summary["options"] = options
         return summary
 
+    def _extract_candidate_rows(self, form):
+        rows: list = []
+        seen = set()
+
+        def _append_unique(elements):
+            for el in elements:
+                key = id(el)
+                if key in seen:
+                    continue
+                seen.add(key)
+                rows.append(el)
+
+        # Primary selectors (legacy/current VTEX widget table).
+        try:
+            table = form.find_element(*self.FREIGHT_TABLE)
+            if table.is_displayed():
+                _append_unique(table.find_elements(*self.FREIGHT_TABLE_ROW))
+                _append_unique(table.find_elements(By.CSS_SELECTOR, "tbody tr"))
+                _append_unique(table.find_elements(By.CSS_SELECTOR, "tr"))
+        except Exception:
+            pass
+
+        # Generic row-like containers used by some storefront variants.
+        for by, selector in (
+            (By.CSS_SELECTOR, "[class*='shipping'] tr"),
+            (By.CSS_SELECTOR, "[class*='frete'] tr"),
+            (By.CSS_SELECTOR, "[data-testid*='shipping'] tr"),
+            (By.CSS_SELECTOR, "li[class*='shipping']"),
+            (By.CSS_SELECTOR, "li[class*='frete']"),
+        ):
+            try:
+                _append_unique(form.find_elements(by, selector))
+            except Exception:
+                continue
+
+        return rows
+
     def _parse_freight_row(self, row) -> dict | None:
         cells = row.find_elements(By.CSS_SELECTOR, "td")
         cell_texts = [c.text.strip() for c in cells if c.text and c.text.strip()]
         text_blob = " ".join(cell_texts) if cell_texts else ((row.text or "").strip())
         if not text_blob:
+            text_blob = (row.get_attribute("textContent") or "").strip()
+        return self._parse_freight_text(text_blob)
+
+    def _parse_freight_text(self, text_blob: str) -> dict | None:
+        text_blob = (text_blob or "").strip()
+        if not text_blob:
             return None
 
-        prazo_match = re.search(r"Em at\u00e9\s+\d+\s+dias?\s+\u00fateis", text_blob, flags=re.IGNORECASE)
-        modo_match = re.search(r"\b(Normal|Expresso|Econ\u00f4mico)\b", text_blob, flags=re.IGNORECASE)
+        lowered = text_blob.lower()
+        if any(signal in lowered for signal in self.FREIGHT_NEGATIVE_SIGNALS):
+            return None
+
+        prazo_match = re.search(
+            r"(Em at\u00e9\s+\d+\s+dias?\s+\u00fateis?|at\u00e9\s+\d+\s+dias?\s+\u00fateis?|"
+            r"A partir de [^\n]+)",
+            text_blob,
+            flags=re.IGNORECASE,
+        )
+        modo_match = re.search(
+            r"\b(Normal|Expresso|Econ\u00f4mico|Retirada|Retire|Agendada|Convencional)\b",
+            text_blob,
+            flags=re.IGNORECASE,
+        )
         price_match = re.search(r"R\$\s?(\d{1,3}(?:\.\d{3})*,\d{2})", text_blob)
         is_free = re.search(r"\bgr[a\u00e1]tis\b", text_blob, flags=re.IGNORECASE) is not None
 
         price = None
-        if not price_match:
-            # Sometimes the currency parts are split into spans; fall back to textContent.
-            text_content = row.get_attribute("textContent") or ""
-            price_match = re.search(r"R\$\s?(\d{1,3}(?:\.\d{3})*,\d{2})", text_content)
-            if not is_free:
-                is_free = re.search(r"\bgr[a\u00e1]tis\b", text_content, flags=re.IGNORECASE) is not None
         if price_match:
             raw = price_match.group(1).replace(".", "").replace(",", ".")
             price = float(Decimal(raw))
         elif is_free:
             price = 0.0
+
+        has_delivery_signal = bool(
+            prazo_match
+            or modo_match
+            or re.search(r"\bentrega\b", text_blob, flags=re.IGNORECASE)
+            or re.search(r"\bretira", text_blob, flags=re.IGNORECASE)
+        )
+        if price is None and not has_delivery_signal:
+            return None
 
         price_kind = "UNKNOWN"
         if price is None:
@@ -209,20 +295,12 @@ class ProbelProductPage:
         else:
             price_kind = "PAID"
 
-        price_text = None
-        for t in reversed(cell_texts):
-            if t:
-                price_text = t
-                break
-        if not price_text:
-            price_text = text_blob or None
-
         return {
-            "delivery_time_text": prazo_match.group(0) if prazo_match else None,
-            "delivery_mode": modo_match.group(1) if modo_match else None,
+            "delivery_time_text": prazo_match.group(0).strip() if prazo_match else None,
+            "delivery_mode": modo_match.group(1).strip() if modo_match else None,
             "price": price,
             "price_kind": price_kind,
-            "price_text": price_text,
+            "price_text": text_blob or None,
         }
 
     def is_blocked(self) -> bool:

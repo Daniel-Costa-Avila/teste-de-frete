@@ -110,60 +110,62 @@ def parse_products_csv(data: bytes) -> list[ProductInputRow]:
 
 def parse_products_xlsx(data: bytes) -> list[ProductInputRow]:
     wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
-    ws = wb.active
+    try:
+        ws = wb.active
 
-    header_row_idx: int | None = None
-    header_map: dict[str, int] = {}
-    for i in range(1, 31):
-        values = [ws.cell(row=i, column=j).value for j in range(1, 9)]
-        normalized = [_norm_header(v) for v in values]
-        if "link do produto" not in normalized:
-            continue
+        header_row_idx: int | None = None
+        header_map: dict[str, int] = {}
+        for i in range(1, 31):
+            values = [ws.cell(row=i, column=j).value for j in range(1, 9)]
+            normalized = [_norm_header(v) for v in values]
+            if "link do produto" not in normalized:
+                continue
 
-        header_map = {h: idx for idx, h in enumerate(normalized) if h}
-        if "nome do produto" in header_map and "id do produto" in header_map and "link do produto" in header_map:
-            header_row_idx = i
-            break
+            header_map = {h: idx for idx, h in enumerate(normalized) if h}
+            if "nome do produto" in header_map and "id do produto" in header_map and "link do produto" in header_map:
+                header_row_idx = i
+                break
 
-    if header_row_idx is None:
-        raise ValueError(
-            "Cabeçalhos não encontrados no XLSX (esperado: Nome do produto / ID do produto / Link do produto "
-            "ou Grupo / ... / CEPs para testar)."
-        )
-
-    def _get(row: tuple[object, ...], col_name: str) -> str:
-        idx = header_map.get(col_name)
-        if idx is None or idx >= len(row):
-            return ""
-        v = row[idx]
-        return str(v).strip() if v is not None else ""
-
-    out: list[ProductInputRow] = []
-    for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
-        if not row or all((c is None or str(c).strip() == "") for c in row):
-            continue
-
-        group = _get(row, "grupo")
-        name = _get(row, "nome do produto")
-        pid = _get(row, "id do produto")
-        url = _get(row, "link do produto")
-        ceps_raw = _get(row, "ceps para testar")
-
-        if not url:
-            continue
-
-        out.append(
-            ProductInputRow(
-                group=group,
-                product_name=name,
-                product_id=pid,
-                url=url,
-                ceps=_parse_ceps(ceps_raw),
+        if header_row_idx is None:
+            raise ValueError(
+                "Cabeçalhos não encontrados no XLSX (esperado: Nome do produto / ID do produto / Link do produto "
+                "ou Grupo / ... / CEPs para testar)."
             )
-        )
 
-    return out
+        def _get(row: tuple[object, ...], col_name: str) -> str:
+            idx = header_map.get(col_name)
+            if idx is None or idx >= len(row):
+                return ""
+            v = row[idx]
+            return str(v).strip() if v is not None else ""
 
+        out: list[ProductInputRow] = []
+        for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
+            if not row or all((c is None or str(c).strip() == "") for c in row):
+                continue
+
+            group = _get(row, "grupo")
+            name = _get(row, "nome do produto")
+            pid = _get(row, "id do produto")
+            url = _get(row, "link do produto")
+            ceps_raw = _get(row, "ceps para testar")
+
+            if not url:
+                continue
+
+            out.append(
+                ProductInputRow(
+                    group=group,
+                    product_name=name,
+                    product_id=pid,
+                    url=url,
+                    ceps=_parse_ceps(ceps_raw),
+                )
+            )
+
+        return out
+    finally:
+        wb.close()
 
 def parse_products_file(filename: str, data: bytes) -> list[ProductInputRow]:
     name = (filename or "").lower().strip()

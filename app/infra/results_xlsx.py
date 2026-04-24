@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+import re
 from typing import Any
 
 from openpyxl import Workbook
@@ -42,9 +43,26 @@ OPTIONS_HEADERS = [
 def _normalize_options(value: Any) -> list[dict[str, Any]]:
     if isinstance(value, list):
         out: list[dict[str, Any]] = []
+        seen: set[tuple[Any, ...]] = set()
         for item in value:
             if isinstance(item, dict):
-                out.append(dict(item))
+                option = dict(item)
+                price = option.get("price")
+                try:
+                    price = None if price is None else round(float(price), 2)
+                except Exception:
+                    price = None
+                key = (
+                    re.sub(r"\s+", " ", str(option.get("price_kind") or "").strip().lower()),
+                    price,
+                    re.sub(r"\s+", " ", str(option.get("delivery_time_text") or "").strip().lower()),
+                    re.sub(r"\s+", " ", str(option.get("delivery_mode") or "").strip().lower()),
+                    re.sub(r"\s+", " ", str(option.get("price_text") or "").strip().lower()),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(option)
         return out
     return []
 
@@ -176,5 +194,9 @@ def build_results_workbook(jobs: list[dict[str, Any]]) -> bytes:
     _autosize_columns(options_ws)
 
     output = BytesIO()
-    wb.save(output)
-    return output.getvalue()
+    try:
+        wb.save(output)
+        return output.getvalue()
+    finally:
+        wb.close()
+

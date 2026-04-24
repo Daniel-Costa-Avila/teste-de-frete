@@ -1,4 +1,5 @@
 import os
+import re
 import uuid
 from urllib.parse import urlparse
 from selenium.common.exceptions import InvalidSessionIdException, TimeoutException, WebDriverException
@@ -35,6 +36,36 @@ class FreightTestService:
         with open(path, "w", encoding="utf-8") as f:
             f.write(page_source)
         return path
+
+    @staticmethod
+    def _norm_text(value: object) -> str:
+        text = str(value or "").strip().lower()
+        return re.sub(r"\s+", " ", text)
+
+    def _dedupe_freight_options(self, options: list[dict]) -> list[dict]:
+        out: list[dict] = []
+        seen: set[tuple[object, ...]] = set()
+        for raw in options:
+            if not isinstance(raw, dict):
+                continue
+            option = dict(raw)
+            price = option.get("price")
+            try:
+                price = None if price is None else round(float(price), 2)
+            except Exception:
+                price = None
+            key = (
+                self._norm_text(option.get("price_kind")),
+                price,
+                self._norm_text(option.get("delivery_time_text")),
+                self._norm_text(option.get("delivery_mode")),
+                self._norm_text(option.get("price_text")),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(option)
+        return out
 
     def _select_page(self, url: str):
         host = (urlparse(url).netloc or "").lower()
@@ -112,15 +143,36 @@ class FreightTestService:
                 result.errors.append(f"Botao de frete nao encontrado: {exc!r}")
                 raise
 
-            freight = page.read_freight_result()
-            result.freight.price = freight["price"]
-            result.freight.price_kind = freight.get("price_kind") or "UNKNOWN"
-            result.freight.price_text = freight.get("price_text")
-            result.freight.delivery_time_text = freight["delivery_time_text"]
-            result.freight.delivery_mode = freight["delivery_mode"]
-            result.freight.options = list(freight.get("options") or [])
+            try:
+                freight = page.read_freight_result()
+            except RuntimeError as exc:
+                # Retry once for widgets that render shipping options asynchronously after the first click.
+                if str(exc) == "FREIGHT_RESULT_NOT_FOUND":
+                    try:
+                        page.calculate_freight()
+                        freight = page.read_freight_result()
+                    except Exception:
+                        raise
+                else:
+                    raise
+            deduped_options = self._dedupe_freight_options(list(freight.get("options") or []))
+            if deduped_options:
+                primary = deduped_options[0]
+                result.freight.price = primary.get("price")
+                result.freight.price_kind = primary.get("price_kind") or "UNKNOWN"
+                result.freight.price_text = primary.get("price_text")
+                result.freight.delivery_time_text = primary.get("delivery_time_text")
+                result.freight.delivery_mode = primary.get("delivery_mode")
+                result.freight.options = deduped_options
+            else:
+                result.freight.price = freight["price"]
+                result.freight.price_kind = freight.get("price_kind") or "UNKNOWN"
+                result.freight.price_text = freight.get("price_text")
+                result.freight.delivery_time_text = freight["delivery_time_text"]
+                result.freight.delivery_mode = freight["delivery_mode"]
+                result.freight.options = []
 
-            if result.freight.price is not None or result.freight.delivery_time_text:
+            if result.freight.options or result.freight.price is not None or result.freight.delivery_time_text:
                 result.status = "SUCCESS"
             else:
                 result.status = "FREIGHT_NOT_RETURNED"

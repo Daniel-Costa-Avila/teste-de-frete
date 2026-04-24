@@ -82,25 +82,6 @@ class JobStore:
             job = self._jobs.get(job_id)
             return dict(job) if job else None
 
-    def list_recent(self, limit: int = 20, q: str | None = None) -> list[dict[str, Any]]:
-        with self._lock:
-            jobs = list(self._jobs.values())
-
-        if q:
-            needle = q.strip().lower()
-            if needle:
-                def _match(job: dict[str, Any]) -> bool:
-                    hay = " ".join(
-                        str(job.get(k) or "")
-                        for k in ("id", "batch_id", "group", "url", "cep", "status", "product_id", "input_product_name")
-                    ).lower()
-                    return needle in hay
-
-                jobs = [j for j in jobs if _match(j)]
-
-        jobs.sort(key=lambda j: j["created_at"], reverse=True)
-        return [dict(j) for j in jobs[:limit]]
-
     def list_by_batch(self, batch_id: str) -> list[dict[str, Any]]:
         with self._lock:
             jobs = [j for j in self._jobs.values() if j.get("batch_id") == batch_id]
@@ -108,31 +89,52 @@ class JobStore:
         return [dict(j) for j in jobs]
 
 
-def _parse_batch_lines(text: str) -> list[dict[str, str]]:
-    items: list[dict[str, str]] = []
-    for raw in (text or "").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
+class BatchProgressStore:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._progress: dict[str, dict[str, Any]] = {}
 
-        parts = [p.strip() for p in line.split(";")]
-        parts = [p for p in parts if p != ""]
+    def start(self, batch_id: str, total_items: int, chunk_size: int) -> None:
+        with self._lock:
+            self._progress[batch_id] = {
+                "state": "running",
+                "total_items": total_items,
+                "chunk_size": chunk_size,
+                "current_start": 0,
+                "current_end": 0,
+                "finished_items": 0,
+            }
 
-        # formats supported:
-        # - url
-        # - product_id;url
-        # - name;product_id;url
-        # - name;product_id;url;cep
-        if len(parts) == 1:
-            items.append({"url": parts[0]})
-        elif len(parts) == 2:
-            items.append({"product_id": parts[0], "url": parts[1]})
-        elif len(parts) == 3:
-            items.append({"input_product_name": parts[0], "product_id": parts[1], "url": parts[2]})
-        else:
-            items.append({"input_product_name": parts[0], "product_id": parts[1], "url": parts[2], "cep": parts[3]})
+    def update_chunk(self, batch_id: str, current_start: int, current_end: int, finished_items: int) -> None:
+        with self._lock:
+            p = self._progress.get(batch_id)
+            if not p:
+                return
+            p["current_start"] = current_start
+            p["current_end"] = current_end
+            p["finished_items"] = finished_items
 
-    return items
+    def mark_done(self, batch_id: str) -> None:
+        with self._lock:
+            p = self._progress.get(batch_id)
+            if not p:
+                return
+            p["state"] = "done"
+            p["current_start"] = 0
+            p["current_end"] = 0
+            p["finished_items"] = p.get("total_items", 0)
+
+    def mark_error(self, batch_id: str) -> None:
+        with self._lock:
+            p = self._progress.get(batch_id)
+            if not p:
+                return
+            p["state"] = "error"
+
+    def get(self, batch_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            p = self._progress.get(batch_id)
+            return dict(p) if p else None
 
 
 def _run_job(store: JobStore, job_id: str) -> None:
@@ -162,12 +164,12 @@ def _run_job(store: JobStore, job_id: str) -> None:
         if getattr(exc, "msg", None):
             msg += f" | WebDriver msg: {exc.msg}"
         if settings.use_remote:
-            msg += f" (verifique SELENOID_URL={settings.selenoid_url} e se o Selenoid está rodando)"
+            msg += f" (verifique SELENOID_URL={settings.selenoid_url} e se o Selenoid estÃƒÂ¡ rodando)"
         store.update(job_id, status="ERROR", error=msg, finished_at=_utc_now_iso())
     except Exception as exc:
         msg = f"{type(exc).__name__}: {exc!r}"
         if settings.use_remote:
-            msg += f" (verifique SELENOID_URL={settings.selenoid_url} e se o Selenoid está rodando)"
+            msg += f" (verifique SELENOID_URL={settings.selenoid_url} e se o Selenoid estÃƒÂ¡ rodando)"
         store.update(job_id, status="ERROR", error=msg, finished_at=_utc_now_iso())
     finally:
         if driver is not None:
@@ -177,10 +179,51 @@ def _run_job(store: JobStore, job_id: str) -> None:
                 pass
 
 
+def _run_jobs_in_chunks(
+    *,
+    store: JobStore,
+    job_ids: list[str],
+    batch_id: str,
+    chunk_size: int,
+    progress_store: BatchProgressStore,
+    logger: Any,
+) -> None:
+    total = len(job_ids)
+    progress_store.start(batch_id=batch_id, total_items=total, chunk_size=chunk_size)
+
+    try:
+        finished = 0
+        for i in range(0, total, chunk_size):
+            start = i + 1
+            end = min(i + chunk_size, total)
+            progress_store.update_chunk(batch_id, current_start=start, current_end=end, finished_items=finished)
+            logger.info("Processando lote %s-%s de %s itens (batch_id=%s)", start, end, total, batch_id)
+
+            workers: list[threading.Thread] = []
+            for job_id in job_ids[i:end]:
+                t = threading.Thread(target=_run_job, args=(store, job_id), daemon=True)
+                workers.append(t)
+                t.start()
+
+            for t in workers:
+                t.join()
+
+            finished = end
+            progress_store.update_chunk(batch_id, current_start=start, current_end=end, finished_items=finished)
+
+        progress_store.mark_done(batch_id)
+        logger.info("Processamento finalizado para batch_id=%s (total=%s)", batch_id, total)
+    except Exception:
+        progress_store.mark_error(batch_id)
+        logger.exception("Falha no processamento em lotes (batch_id=%s)", batch_id)
+
+
 def create_app() -> Flask:
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024  # 5MB
+    app_settings = Settings()
     store = JobStore()
+    batch_progress = BatchProgressStore()
 
     def _format_money(amount: float, currency: str) -> str:
         currency = (currency or "BRL").upper()
@@ -200,7 +243,7 @@ def create_app() -> Flask:
         currency = str(freight.get("currency") or "BRL")
 
         if kind == "FREE" or price == 0 or price == 0.0:
-            return "Grátis"
+            return "GrÃƒÂ¡tis"
         if price is None:
             return str(freight.get("price_text") or "-")
         try:
@@ -210,19 +253,11 @@ def create_app() -> Flask:
 
     @app.get("/")
     def index():
-        settings = Settings()
-        q = (request.args.get("q") or "").strip()
         default_url = "https://probel.com.br/colchao-casal-mola-ensacada-probel-excede-premium/p"
         return render_template(
             "index.html",
-            jobs=store.list_recent(q=q),
-            q=q,
             default_url=default_url,
             default_cep="79800-002",
-            defaults={
-                "headless": settings.headless,
-                "use_remote": settings.use_remote,
-            },
         )
 
     @app.post("/run")
@@ -232,69 +267,23 @@ def create_app() -> Flask:
         if not url or not cep:
             abort(400, "Informe URL e CEP.")
 
-        headless = _to_bool(request.form.get("headless"))
-        use_remote = _to_bool(request.form.get("use_remote"))
+        use_remote = app_settings.use_remote
 
-        job_id = store.create(url=url, cep=cep, headless=headless, use_remote=use_remote)
+        job_id = store.create(url=url, cep=cep, headless=app_settings.headless, use_remote=use_remote)
         t = threading.Thread(target=_run_job, args=(store, job_id), daemon=True)
         t.start()
         return redirect(url_for("run_detail", job_id=job_id))
 
-    @app.post("/run-batch")
-    def run_batch():
-        cep_default = normalize_cep(request.form.get("cep"))
-        raw_items = (request.form.get("items") or "").strip()
-        if not raw_items:
-            abort(400, "Informe ao menos 1 URL.")
-        if not cep_default:
-            abort(400, "Informe o CEP.")
-
-        headless = _to_bool(request.form.get("headless"))
-        use_remote = _to_bool(request.form.get("use_remote"))
-
-        items = _parse_batch_lines(raw_items)
-        if not items:
-            abort(400, "Nenhuma linha válida encontrada.")
-        if len(items) > 50:
-            abort(400, "Lote muito grande (máximo: 50 linhas).")
-
-        batch_id = uuid.uuid4().hex
-        created: list[str] = []
-        for item in items:
-            url = (item.get("url") or "").strip()
-            if not url.startswith(("http://", "https://")):
-                continue
-            cep = normalize_cep(item.get("cep") or cep_default)
-            if not cep:
-                continue
-            job_id = store.create(
-                url=url,
-                cep=cep,
-                headless=headless,
-                use_remote=use_remote,
-                batch_id=batch_id,
-                product_id=(item.get("product_id") or "").strip() or None,
-                input_product_name=(item.get("input_product_name") or "").strip() or None,
-            )
-            created.append(job_id)
-            t = threading.Thread(target=_run_job, args=(store, job_id), daemon=True)
-            t.start()
-
-        if not created:
-            abort(400, "Nenhuma URL válida no lote.")
-
-        return redirect(url_for("batch_detail", batch_id=batch_id))
-
     @app.get("/templates/produtos.xlsx")
     def template_produtos_xlsx():
-        path = os.path.abspath(os.path.join(Settings().artifacts_dir, "produtos_entrada_template.xlsx"))
+        path = os.path.abspath(os.path.join(app_settings.artifacts_dir, "produtos_entrada_template.xlsx"))
         if not os.path.exists(path):
             abort(404)
         return send_file(path, as_attachment=True, download_name="produtos_entrada_template.xlsx")
 
     @app.get("/templates/produtos.csv")
     def template_produtos_csv():
-        path = os.path.abspath(os.path.join(Settings().artifacts_dir, "produtos_entrada_template.csv"))
+        path = os.path.abspath(os.path.join(app_settings.artifacts_dir, "produtos_entrada_template.csv"))
         if not os.path.exists(path):
             abort(404)
         return send_file(path, as_attachment=True, download_name="produtos_entrada_template.csv")
@@ -309,8 +298,7 @@ def create_app() -> Flask:
         if not file or not file.filename:
             abort(400, "Envie a planilha (.xlsx ou .csv).")
 
-        headless = _to_bool(request.form.get("headless"))
-        use_remote = _to_bool(request.form.get("use_remote"))
+        use_remote = app_settings.use_remote
 
         data = file.read()
         try:
@@ -320,16 +308,19 @@ def create_app() -> Flask:
 
         if not rows:
             abort(400, "Planilha sem linhas válidas.")
-        if len(rows) > 50:
-            abort(400, "Planilha muito grande (máximo: 50 linhas).")
+        if len(rows) > app_settings.max_sheet_rows:
+            abort(400, f"Planilha muito grande (máximo: {app_settings.max_sheet_rows} linhas).")
 
         batch_id = uuid.uuid4().hex
         total_jobs = 0
         for r in rows:
             ceps = getattr(r, "ceps", None) or ()
             total_jobs += len(ceps) if ceps else 1
-        if total_jobs > 200:
-            abort(400, "Planilha gera muitas execuÃ§Ãµes (mÃ¡ximo: 200). Reduza CEPs/linhas.")
+        if total_jobs > app_settings.max_sheet_jobs:
+            abort(
+                400,
+                f"Planilha gera muitas execuções (máximo: {app_settings.max_sheet_jobs}). Reduza CEPs/linhas.",
+            )
 
         created: list[str] = []
         for r in rows:
@@ -343,7 +334,7 @@ def create_app() -> Flask:
                 job_id = store.create(
                     url=url,
                     cep=normalize_cep(cep),
-                    headless=headless,
+                    headless=app_settings.headless,
                     use_remote=use_remote,
                     batch_id=batch_id,
                     group=group,
@@ -351,11 +342,23 @@ def create_app() -> Flask:
                     input_product_name=(r.product_name or "").strip() or None,
                 )
                 created.append(job_id)
-                t = threading.Thread(target=_run_job, args=(store, job_id), daemon=True)
-                t.start()
 
         if not created:
             abort(400, "Nenhuma URL válida encontrada na planilha.")
+
+        manager = threading.Thread(
+            target=_run_jobs_in_chunks,
+            kwargs={
+                "store": store,
+                "job_ids": created,
+                "batch_id": batch_id,
+                "chunk_size": app_settings.sheet_parallel_limit,
+                "progress_store": batch_progress,
+                "logger": app.logger,
+            },
+            daemon=True,
+        )
+        manager.start()
 
         return redirect(url_for("batch_detail", batch_id=batch_id))
 
@@ -365,12 +368,21 @@ def create_app() -> Flask:
         if not jobs:
             abort(404)
 
+        progress = batch_progress.get(batch_id)
+        done_count = sum(1 for j in jobs if j["status"] in {"DONE", "ERROR"})
+        running_count = sum(1 for j in jobs if j["status"] == "RUNNING")
+        queued_count = sum(1 for j in jobs if j["status"] == "QUEUED")
+
         running = any(j["status"] in {"QUEUED", "RUNNING"} for j in jobs)
         return render_template(
             "batch.html",
             batch_id=batch_id,
             jobs=jobs,
             auto_refresh=running,
+            progress=progress,
+            done_count=done_count,
+            running_count=running_count,
+            queued_count=queued_count,
         )
 
     @app.get("/batches/<batch_id>/results.xlsx")
@@ -455,8 +467,7 @@ def create_app() -> Flask:
         filename = (filename or "").replace("\\", "/")
         if not filename or filename.startswith("../") or "/../" in filename:
             abort(404)
-        settings = Settings()
-        directory = os.path.abspath(settings.artifacts_dir)
+        directory = os.path.abspath(app_settings.artifacts_dir)
         return send_from_directory(directory, filename, as_attachment=False)
 
     @app.get("/health")

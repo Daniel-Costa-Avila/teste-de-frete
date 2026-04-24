@@ -12,11 +12,24 @@
   <section class="card">
     <div class="run-head">
       <h2>Lote</h2>
-      <div class="mono">{{ batch_id }}</div>
+      <div class="actions">
+        <a class="btn btn-secondary" href="{{ url_for('index') }}">Voltar</a>
+        <div class="mono">{{ batch_id }}</div>
+      </div>
     </div>
     <div class="hint">
-      Este lote reúne várias execuções criadas na mesma submissão.
+      Este lote reune varias execucoes criadas na mesma submissao.
       {% if auto_refresh %}Atualizando automaticamente...{% endif %}
+    </div>
+    <div class="hint" style="margin-top: 8px;">
+      Status: {{ done_count }} concluidas, {{ running_count }} em execucao, {{ queued_count }} na fila.
+      {% if progress and progress.state == "running" and progress.current_start and progress.current_end %}
+        Processando lote {{ progress.current_start }}-{{ progress.current_end }} de {{ progress.total_items }} itens.
+      {% elif progress and progress.state == "done" %}
+        Processamento finalizado ({{ progress.total_items }} itens).
+      {% elif progress and progress.state == "error" %}
+        Erro no controlador de lotes. Verifique os logs do servidor.
+      {% endif %}
     </div>
     <div class="actions" style="margin-top: 12px;">
       <a class="link" href="{{ url_for('batch_results_xlsx', batch_id=batch_id) }}">Baixar XLSX</a>
@@ -24,7 +37,7 @@
   </section>
 
   <section class="card">
-    <h2>Execuções do lote</h2>
+    <h2>Execucoes do lote</h2>
     <div class="table">
       <div class="tr th tr-batch">
         <div>ID</div>

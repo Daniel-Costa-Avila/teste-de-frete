@@ -11,7 +11,7 @@ python -m app.web
 
 Abra `http://127.0.0.1:5000`.
 
-## Rodar com Selenoid (remoto)
+## Rodar com Selenoid (opcional)
 
 Suba o Selenoid local:
 
@@ -19,7 +19,12 @@ Suba o Selenoid local:
 docker compose up -d
 ```
 
-Marque “Usar Selenoid (remoto)” na UI.
+Ative o remoto via variável de ambiente:
+
+```powershell
+$env:USE_REMOTE="1"
+python -m app.web
+```
 
 ## Planilha de produtos
 

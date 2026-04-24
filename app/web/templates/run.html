@@ -31,8 +31,6 @@
       {% endif %}
       <div class="k">URL</div><div class="v"><a class="link" href="{{ job.url }}" target="_blank" rel="noreferrer">{{ job.url }}</a></div>
       <div class="k">CEP</div><div class="v mono">{{ job.cep }}</div>
-      <div class="k">Headless</div><div class="v">{{ "sim" if job.headless else "não" }}</div>
-      <div class="k">Selenoid</div><div class="v">{{ "sim" if job.use_remote else "não" }}</div>
       <div class="k">Criado</div><div class="v mono">{{ job.created_at }}</div>
       <div class="k">Início</div><div class="v mono">{{ job.started_at or "-" }}</div>
       <div class="k">Fim</div><div class="v mono">{{ job.finished_at or "-" }}</div>

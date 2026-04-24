@@ -33,6 +33,16 @@ class Settings:
     page_timeout_seconds: int = field(default_factory=lambda: int(os.getenv("PAGE_TIMEOUT_SECONDS", "60")))
     wait_timeout_seconds: int = field(default_factory=lambda: int(os.getenv("WAIT_TIMEOUT_SECONDS", "25")))
     slow_type_delay_ms: int = field(default_factory=lambda: int(os.getenv("SLOW_TYPE_DELAY_MS", "90")))
+    max_concurrent_jobs: int = field(
+        default_factory=lambda: max(
+            1,
+            int(os.getenv("MAX_CONCURRENT_JOBS", "1" if _env_bool("USE_REMOTE", False) else "6")),
+        )
+    )
+    max_batch_lines: int = field(default_factory=lambda: max(1, int(os.getenv("MAX_BATCH_LINES", "200"))))
+    max_sheet_rows: int = field(default_factory=lambda: max(1, int(os.getenv("MAX_SHEET_ROWS", "200"))))
+    max_sheet_jobs: int = field(default_factory=lambda: max(1, int(os.getenv("MAX_SHEET_JOBS", "200"))))
+    sheet_parallel_limit: int = field(default_factory=lambda: max(1, int(os.getenv("SHEET_PARALLEL_LIMIT", "5"))))
     artifacts_dir: str = field(default_factory=lambda: os.getenv("ARTIFACTS_DIR", "artifacts"))
     results_csv_path: str = field(
         default_factory=lambda: os.getenv(
