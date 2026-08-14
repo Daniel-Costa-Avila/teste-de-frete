@@ -95,7 +95,7 @@ def build_driver(settings: Settings) -> webdriver.Remote:
         options.set_capability("selenoid:options", {
             "enableVNC": True,
             "enableVideo": False,
-            "sessionTimeout": "5m",
+            "sessionTimeout": settings.selenoid_session_timeout,
             "name": "freight-test-probel"
         })
 

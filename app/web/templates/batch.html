@@ -14,6 +14,11 @@
       <h2>Lote</h2>
       <div class="actions">
         <a class="btn btn-secondary" href="{{ url_for('index') }}">Voltar</a>
+        {% if auto_refresh %}
+          <form method="post" action="{{ url_for('batch_cancel', batch_id=batch_id) }}">
+            <button class="btn btn-secondary" type="submit">Cancelar lote</button>
+          </form>
+        {% endif %}
         <div class="mono">{{ batch_id }}</div>
       </div>
     </div>
@@ -50,7 +55,7 @@
       {% for j in jobs %}
         <div class="tr tr-batch">
           <div class="mono">{{ j.id[:10] }}</div>
-          <div class="badge badge-{{ j.status|lower }}">{{ j.status }}</div>
+          <div class="badge badge-{{ j.status|lower }}">{{ j.status|replace("_", " ") }}</div>
           <div class="mono">{{ j.cep }}</div>
           <div class="muted">{{ j.group or "-" }}</div>
           <div class="muted">

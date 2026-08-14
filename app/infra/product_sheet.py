@@ -67,7 +67,7 @@ def parse_products_csv(data: bytes) -> list[ProductInputRow]:
     v1 = header3 == EXPECTED_HEADERS_V1
     if not v1 and not v2:
         raise ValueError(
-            "Cabeçalhos inválidos no CSV (esperado: "
+            "Cabecalhos invalidos no CSV (esperado: "
             "Nome do produto;ID do produto;Link do produto "
             "ou Grupo;Nome do produto;ID do produto;Link do produto;CEPs para testar)."
         )
@@ -118,18 +118,22 @@ def parse_products_xlsx(data: bytes) -> list[ProductInputRow]:
         for i in range(1, 31):
             values = [ws.cell(row=i, column=j).value for j in range(1, 9)]
             normalized = [_norm_header(v) for v in values]
-            if "link do produto" not in normalized:
+            if "link do produto" not in normalized and "link" not in normalized:
                 continue
 
             header_map = {h: idx for idx, h in enumerate(normalized) if h}
-            if "nome do produto" in header_map and "id do produto" in header_map and "link do produto" in header_map:
+
+            has_name = "nome do produto" in header_map or "titulo" in header_map
+            has_id = "id do produto" in header_map or "id_produto" in header_map
+            has_link = "link do produto" in header_map or "link" in header_map
+            if has_name and has_id and has_link:
                 header_row_idx = i
                 break
 
         if header_row_idx is None:
             raise ValueError(
-                "Cabeçalhos não encontrados no XLSX (esperado: Nome do produto / ID do produto / Link do produto "
-                "ou Grupo / ... / CEPs para testar)."
+                "Cabecalhos nao encontrados no XLSX (esperado: Nome do produto / ID do produto / Link do produto "
+                "ou Grupo / ... / CEPs para testar, ou id_produto / titulo / link)."
             )
 
         def _get(row: tuple[object, ...], col_name: str) -> str:
@@ -144,11 +148,11 @@ def parse_products_xlsx(data: bytes) -> list[ProductInputRow]:
             if not row or all((c is None or str(c).strip() == "") for c in row):
                 continue
 
-            group = _get(row, "grupo")
-            name = _get(row, "nome do produto")
-            pid = _get(row, "id do produto")
-            url = _get(row, "link do produto")
-            ceps_raw = _get(row, "ceps para testar")
+            group = _get(row, "grupo") or _get(row, "canal")
+            name = _get(row, "nome do produto") or _get(row, "titulo")
+            pid = _get(row, "id do produto") or _get(row, "id_produto")
+            url = _get(row, "link do produto") or _get(row, "link")
+            ceps_raw = _get(row, "ceps para testar") or _get(row, "ceps")
 
             if not url:
                 continue
@@ -167,11 +171,11 @@ def parse_products_xlsx(data: bytes) -> list[ProductInputRow]:
     finally:
         wb.close()
 
+
 def parse_products_file(filename: str, data: bytes) -> list[ProductInputRow]:
     name = (filename or "").lower().strip()
     if name.endswith(".csv"):
         return parse_products_csv(data)
     if name.endswith(".xlsx"):
         return parse_products_xlsx(data)
-    raise ValueError("Formato de arquivo não suportado. Envie .xlsx ou .csv.")
-
+    raise ValueError("Formato de arquivo nao suportado. Envie .xlsx ou .csv.")

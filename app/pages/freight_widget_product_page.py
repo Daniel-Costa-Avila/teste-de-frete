@@ -7,6 +7,7 @@ from decimal import Decimal
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.remote.webdriver import WebDriver
+from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -204,9 +205,17 @@ class FreightWidgetProductPage:
 
         self.wait.until(_has_result)
 
-        raw_text = (container.text or "").strip()
-        if not raw_text:
+        try:
+            raw_text = (container.text or "").strip()
+        except StaleElementReferenceException:
+            container = self._get_freight_container()
             raw_text = (container.get_attribute("textContent") or "").strip()
+        if not raw_text:
+            try:
+                raw_text = (container.get_attribute("textContent") or "").strip()
+            except StaleElementReferenceException:
+                container = self._get_freight_container()
+                raw_text = (container.get_attribute("textContent") or "").strip()
         if not raw_text:
             raise RuntimeError("FREIGHT_RESULT_NOT_FOUND")
 

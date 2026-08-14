@@ -3,11 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{% block title %}Teste de Frete{% endblock %}</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <title>{% block title %}BUSCA FRETE{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+    <script>
+      (function () {
+        var saved = localStorage.getItem("theme");
+        var theme = saved || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        document.documentElement.setAttribute("data-theme", theme);
+      })();
+    </script>
+    <script defer src="{{ url_for('static', filename='app.js') }}"></script>
     {% block head %}{% endblock %}
   </head>
   <body>
@@ -22,12 +27,23 @@
                 <path d="M8.5 12.3h7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
               </svg>
             </span>
-            Teste de Frete
+            BUSCA FRETE
           </a>
-          <div class="subtitle">Painel de coleta e auditoria de frete via Selenium</div>
+          <div class="subtitle">Consulte o frete por link do produto e CEP.</div>
         </div>
         <div class="header-actions">
-          <a class="chip" href="{{ url_for('health') }}" target="_blank" rel="noreferrer">health</a>
+          <button type="button" class="chip theme-toggle" data-theme-toggle aria-label="Alternar tema">
+            <span class="theme-toggle-icon" data-theme-icon-light aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="4.5" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v2.4M12 19.1v2.4M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2.5 12h2.4M19.1 12h2.4M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            </span>
+            <span class="theme-toggle-icon" data-theme-icon-dark aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5a8.5 8.5 0 1 0 10.7 10.7Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+            </span>
+          </button>
+          <a class="chip" href="{{ url_for('manual') }}">manual</a>
+          <a class="chip" href="{{ url_for('index') }}#scheduler">agendamentos</a>
+          <a class="chip" href="{{ url_for('results_center') }}">resultados</a>
+          <a class="chip" href="{{ url_for('health') }}" target="_blank" rel="noreferrer">status</a>
         </div>
       </header>
 

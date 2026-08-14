@@ -3,6 +3,7 @@ import json
 import sys
 import uuid
 from app.config import Settings
+from app.infra.artifacts import cleanup_expired_artifacts
 from app.infra.driver_factory import build_driver
 from app.infra.results_csv import append_result, ensure_results_csv
 from app.services.freight_test_service import FreightTestService
@@ -31,6 +32,7 @@ def run():
     args = parser.parse_args()
 
     settings = Settings()
+    cleanup_expired_artifacts(settings.artifacts_dir, settings.artifact_retention_days)
     results_csv_path = (args.results_csv or settings.results_csv_path) if not args.no_results_csv else None
 
     if args.template_results_csv:

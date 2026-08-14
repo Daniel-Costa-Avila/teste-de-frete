@@ -10,6 +10,7 @@ from openpyxl.utils import get_column_letter
 
 
 SUMMARY_HEADERS = [
+    "Status",
     "Fonte",
     "ID do produto",
     "Nome informado",
@@ -26,6 +27,7 @@ SUMMARY_HEADERS = [
 ]
 
 OPTIONS_HEADERS = [
+    "Status",
     "Fonte",
     "ID do produto",
     "Nome informado",
@@ -140,7 +142,16 @@ def build_results_workbook(jobs: list[dict[str, Any]]) -> bytes:
         freight = result_dict.get("freight") if isinstance(result_dict.get("freight"), dict) else {}
         options = _normalize_options(freight.get("options"))
 
+        raw_status = result_dict.get("status") or job.get("status") or ""
+        status = str(raw_status).upper().replace("_", " ").strip()
+        success_statuses = {"SUCCESS", "DONE"}
+        unavailable_label = _format_price_kind("UNKNOWN")
+        kind_text = _format_price_kind(freight.get("price_kind"))
+        if kind_text == unavailable_label and status and status not in success_statuses:
+            kind_text = status
+
         summary_row = {
+            "Status": status,
             "Fonte": result_dict.get("source") or job.get("group") or "",
             "ID do produto": job.get("product_id"),
             "Nome informado": job.get("input_product_name"),
@@ -149,7 +160,7 @@ def build_results_workbook(jobs: list[dict[str, Any]]) -> bytes:
             "Nome do produto": result_dict.get("product_name"),
             "Valor do frete": freight.get("price"),
             "Moeda": freight.get("currency"),
-            "Tipo do frete": _format_price_kind(freight.get("price_kind")),
+            "Tipo do frete": kind_text,
             "Prazo de entrega": freight.get("delivery_time_text"),
             "Modo de entrega": freight.get("delivery_mode"),
             "Quantidade de opções": len(options),
@@ -169,9 +180,13 @@ def build_results_workbook(jobs: list[dict[str, Any]]) -> bytes:
         if not options:
             options = [{}]
         for idx, option in enumerate(options, start=1):
+            option_kind = _format_price_kind(option.get("price_kind"))
+            if option_kind == unavailable_label and status and status not in success_statuses:
+                option_kind = status
             options_rows += 1
             options_ws.append(
                 [
+                    status,
                     result_dict.get("source") or job.get("group") or "",
                     job.get("product_id"),
                     job.get("input_product_name"),
@@ -181,7 +196,7 @@ def build_results_workbook(jobs: list[dict[str, Any]]) -> bytes:
                     option.get("delivery_time_text"),
                     option.get("delivery_mode"),
                     option.get("price"),
-                    _format_price_kind(option.get("price_kind")),
+                    option_kind,
                     option.get("price_text"),
                 ]
             )

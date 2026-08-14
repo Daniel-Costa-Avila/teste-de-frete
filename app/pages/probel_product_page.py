@@ -6,6 +6,7 @@ from decimal import Decimal
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.remote.webdriver import WebDriver
+from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from app.infra.cep import normalize_cep
@@ -165,6 +166,12 @@ class ProbelProductPage:
             except Exception:
                 pass
             try:
+                rows = self._extract_candidate_rows(self.driver)
+                if rows:
+                    return True
+            except Exception:
+                pass
+            try:
                 text = (form.text or "").strip()
             except Exception:
                 text = ""
@@ -180,6 +187,8 @@ class ProbelProductPage:
         self.wait.until(_has_rows_or_signals)
 
         rows = self._extract_candidate_rows(form)
+        if not rows:
+            rows = self._extract_candidate_rows(self.driver)
         parsed_rows: list[dict] = []
         for row in rows:
             parsed = self._parse_freight_row(row)
@@ -241,12 +250,39 @@ class ProbelProductPage:
         return rows
 
     def _parse_freight_row(self, row) -> dict | None:
-        cells = row.find_elements(By.CSS_SELECTOR, "td")
-        cell_texts = [c.text.strip() for c in cells if c.text and c.text.strip()]
-        text_blob = " ".join(cell_texts) if cell_texts else ((row.text or "").strip())
-        if not text_blob:
-            text_blob = (row.get_attribute("textContent") or "").strip()
-        return self._parse_freight_text(text_blob)
+        try:
+            cells = row.find_elements(By.CSS_SELECTOR, "td")
+            cell_texts = []
+            for c in cells:
+                try:
+                    t = (c.get_attribute("textContent") or "").strip() or (c.text or "").strip()
+                except StaleElementReferenceException:
+                    return None
+                except Exception:
+                    t = ""
+                if t:
+                    cell_texts.append(t)
+
+            if cell_texts:
+                text_blob = " ".join(cell_texts)
+            else:
+                try:
+                    text_blob = (row.get_attribute("textContent") or "").strip()
+                except StaleElementReferenceException:
+                    return None
+                except Exception:
+                    text_blob = ""
+                if not text_blob:
+                    try:
+                        text_blob = (row.text or "").strip()
+                    except StaleElementReferenceException:
+                        return None
+                    except Exception:
+                        text_blob = ""
+
+            return self._parse_freight_text(text_blob)
+        except StaleElementReferenceException:
+            return None
 
     def _parse_freight_text(self, text_blob: str) -> dict | None:
         text_blob = (text_blob or "").strip()
@@ -365,25 +401,56 @@ class ProbelProductPage:
                 if not _is_visible(b):
                     continue
 
-                container = None
-                for xp in ("ancestor::form[1]", "ancestor::section[1]", "ancestor::div[1]"):
+                candidates = []
+                for xp in (
+                    "ancestor::form[1]",
+                    "ancestor::section[1]",
+                    "ancestor::div[1]",
+                    "ancestor::div[2]",
+                    "ancestor::div[3]",
+                    "ancestor::div[4]",
+                ):
                     try:
-                        container = b.find_element(By.XPATH, xp)
-                        break
+                        c = b.find_element(By.XPATH, xp)
                     except Exception:
-                        container = None
+                        continue
+                    try:
+                        if not c.is_displayed():
+                            continue
+                    except Exception:
+                        pass
+                    candidates.append(c)
 
-                if container is None:
-                    continue
+                best = None
+                best_score = -1
+                best_input = None
+                for container in candidates:
+                    try:
+                        inputs = container.find_elements(By.XPATH, ".//input[not(@type='hidden')]")
+                    except Exception:
+                        inputs = []
 
-                try:
-                    inputs = container.find_elements(By.XPATH, ".//input[not(@type='hidden')]")
-                except Exception:
-                    inputs = []
+                    chosen_input = None
+                    for inp in inputs:
+                        if _is_visible(inp):
+                            chosen_input = inp
+                            break
+                    if chosen_input is None:
+                        continue
 
-                for inp in inputs:
-                    if _is_visible(inp):
-                        return container, inp, b
+                    try:
+                        text_len = len((container.get_attribute("innerText") or "").strip())
+                    except Exception:
+                        text_len = 0
+
+                    score = text_len
+                    if score > best_score:
+                        best = container
+                        best_score = score
+                        best_input = chosen_input
+
+                if best is not None and best_input is not None:
+                    return best, best_input, b
 
             return None
 

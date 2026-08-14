@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block title %}Manual · BUSCA FRETE{% endblock %}
+
+{% block content %}
+  <section class="card">
+    <div class="section-head">
+      <h2>Manual do sistema</h2>
+      <p>Guia completo para importar planilhas, acompanhar lotes e exportar resultados.</p>
+    </div>
+
+    <div class="actions" style="margin-top: 10px;">
+      <a class="btn btn-secondary" href="{{ url_for('index') }}#sheet-run">Ir para envio de planilha</a>
+      <a class="btn btn-secondary" href="{{ url_for('index') }}">Voltar para home</a>
+    </div>
+  </section>
+
+  <section id="passo-a-passo" class="card">
+    <div class="section-head">
+      <h2>Passo a passo (lote por planilha)</h2>
+      <p>Siga esta ordem para evitar erros comuns.</p>
+    </div>
+
+    <ol class="manual-steps">
+      <li>
+        <strong>Baixe o template</strong> (XLSX recomendado): use os links abaixo.
+        <div class="actions" style="margin-top: 10px;">
+          <a class="btn btn-secondary btn-compact" href="{{ url_for('template_produtos_xlsx') }}" download>Baixar XLSX</a>
+          <a class="btn btn-secondary btn-compact" href="{{ url_for('template_produtos_csv') }}" download>Baixar CSV</a>
+        </div>
+      </li>
+      <li>
+        <strong>Preencha as colunas</strong> e mantenha o arquivo com extensão <code>.xlsx</code> ou <code>.csv</code>.
+      </li>
+      <li>
+        <strong>Envie a planilha</strong> na tela inicial e informe um <strong>CEP padrão</strong>.
+      </li>
+      <li>
+        <strong>Clique em "Executar planilha"</strong> e aguarde o processamento do lote.
+      </li>
+      <li>
+        <strong>Acompanhe o progresso</strong> abrindo o lote (ele fica disponivel em "Pesquisas recentes").
+      </li>
+      <li>
+        <strong>Exporte os resultados</strong> baixando o arquivo <code>.xlsx</code> ao finalizar.
+      </li>
+    </ol>
+  </section>
+
+  <section id="base-salva" class="card">
+    <div class="section-head">
+      <h2>Execução por base salva</h2>
+      <p>Use este modo para rodar todos os produtos importados contra todos os CEPs da base local.</p>
+    </div>
+
+    <ol class="manual-steps">
+      <li>
+        Garanta que a base foi gerada em <code>artifacts/base_frete.db</code> com os scripts de importação.
+      </li>
+      <li>
+        Na home, abra a seção <strong>Executar base salva</strong>.
+      </li>
+      <li>
+        Selecione os links/produtos e os CEPs desejados, ou rode a base completa.
+      </li>
+      <li>
+        Confira os totais exibidos (produtos, CEPs e total previsto de execuções) e inicie o lote.
+      </li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <div class="section-head">
+      <h2>Central de resultados</h2>
+      <p>A qualquer momento, use o botao <strong>resultados</strong> no topo para abrir, revisar e baixar os dados gerados.</p>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-head">
+      <h2>Agendamento automatico</h2>
+      <p>Na home, use a area <strong>Pesquisa automatica por agendamento</strong> para criar execucoes diarias em horario fixo.</p>
+    </div>
+    <div class="hint">
+      O agendamento usa o horario local do servidor e pode rodar a base completa ou uma selecao personalizada de produtos e CEPs.
+    </div>
+  </section>
+
+  <section id="template" class="card">
+    <div class="section-head">
+      <h2>Template e regras</h2>
+      <p>Regras do arquivo e formato esperado das colunas.</p>
+    </div>
+
+    <div class="checklist">
+      <div class="check-item">Arquivo com extensão <code>.xlsx</code> ou <code>.csv</code></div>
+      <div class="check-item">Campo <code>Link do produto</code> preenchido</div>
+      <div class="check-item">CEP por linha é opcional (usa CEP padrão quando vazio)</div>
+    </div>
+
+    <div class="hint" style="margin-top: 12px;">
+      Colunas aceitas: <code>Grupo</code>, <code>Nome do produto</code>, <code>ID do produto</code>, <code>Link do produto</code>, <code>CEPs para testar</code>.
+    </div>
+
+    <div class="hint" style="margin-top: 10px;">
+      Dica: no campo <code>CEPs para testar</code>, use 1 ou mais CEPs separados por vírgula. Se deixar vazio, o sistema usa o CEP padrão.
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-head">
+      <h2>Problemas comuns</h2>
+      <p>Solução rápida para os erros que mais aparecem.</p>
+    </div>
+
+    <div class="guide-grid">
+      <div class="guide-step">
+        <div class="guide-step-title">"Envie a planilha (.xlsx ou .csv)"</div>
+        <div class="muted">Selecione um arquivo válido e confirme a extensão (xlsx/csv).</div>
+      </div>
+      <div class="guide-step">
+        <div class="guide-step-title">"Planilha sem linhas válidas"</div>
+        <div class="muted">Verifique se existe ao menos 1 linha com <strong>Link do produto</strong> preenchido.</div>
+      </div>
+      <div class="guide-step">
+        <div class="guide-step-title">Resultados faltando</div>
+        <div class="muted">Abra o lote e veja se ainda há itens em execução ou na fila.</div>
+      </div>
+      <div class="guide-step">
+        <div class="guide-step-title">CEP invalido</div>
+        <div class="muted">Use formato <code>00000-000</code> ou só números. O sistema normaliza automaticamente.</div>
+      </div>
+    </div>
+  </section>
+{% endblock %}

@@ -23,5 +23,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 EXPOSE 8080
-RUN chmod +x /app/startup.sh
-CMD ["/app/startup.sh"]
+CMD ["gunicorn", "-b", "0.0.0.0:8080", "app.web.server:create_app()", "--workers", "1", "--threads", "8", "--timeout", "300", "--access-logfile", "-", "--error-logfile", "-"]

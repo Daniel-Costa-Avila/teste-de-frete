@@ -1,0 +1,250 @@
+{
+"Representantes":[
+ {
+  "Faixa de peso": "301g a 500g",
+  "Tipo": "Leve",
+  "SKU": "PAA2686",
+  "Nome do Produto": "Travesseiro Probel Life Espuma D15 Firme 12cm (alt)"
+ },
+ {
+  "Faixa de peso": "301g a 500g",
+  "Tipo": "Pesado",
+  "SKU": "PAA2789",
+  "Nome do Produto": "Travesseiro Probel Life Espuma D15 Firme 14cm (alt)"
+ },
+ {
+  "Faixa de peso": "501g a 1kg",
+  "Tipo": "Leve",
+  "SKU": "PAA2684",
+  "Nome do Produto": "Travesseiro Probel Conect Comfort Fibra Siliconada Firme 14cm (alt)"
+ },
+ {
+  "Faixa de peso": "501g a 1kg",
+  "Tipo": "Medio",
+  "SKU": "PAA2681",
+  "Nome do Produto": "Travesseiro Probel Realizacoes Hiper Soft Extra Macio 12cm (alt)"
+ },
+ {
+  "Faixa de peso": "501g a 1kg",
+  "Tipo": "Pesado",
+  "SKU": "PA64956",
+  "Nome do Produto": "Colchao Pet ProDormir Pet Sleep Foam Pequeno Porte (45x55x10cm)"
+ },
+ {
+  "Faixa de peso": "1,001kg a 2kg",
+  "Tipo": "Leve",
+  "SKU": "PAA2685",
+  "Nome do Produto": "Travesseiro Probel Elos Flocos de Espuma Macio 12cm (alt)"
+ },
+ {
+  "Faixa de peso": "1,001kg a 2kg",
+  "Tipo": "Medio",
+  "SKU": "PAA2847",
+  "Nome do Produto": "Travesseiro Encosto Triagular Probel Chronos Multiuso Alveolada"
+ },
+ {
+  "Faixa de peso": "1,001kg a 2kg",
+  "Tipo": "Pesado",
+  "SKU": "KitRealizacoes14",
+  "Nome do Produto": "Kit com 2 Travesseiro Probel Realizacoes Hiper Soft Extra Macio 14cm"
+ },
+ {
+  "Faixa de peso": "2,001kg a 3kg",
+  "Tipo": "Leve",
+  "SKU": "KitZone14",
+  "Nome do Produto": "Kit com 2 Travesseiro Probel Zone Espuma HR Gel D40 Firme 14cm (alt)"
+ },
+ {
+  "Faixa de peso": "2,001kg a 3kg",
+  "Tipo": "Medio",
+  "SKU": "PA64711",
+  "Nome do Produto": "Colchao Pet Probel ProPet Plus Grande Porte (80x100x19cm)"
+ },
+ {
+  "Faixa de peso": "2,001kg a 3kg",
+  "Tipo": "Pesado",
+  "SKU": "PA64955",
+  "Nome do Produto": "Colchao Pet ProDormir PetSleep Plus Grande Porte (80x100x19cm)"
+ },
+ {
+  "Faixa de peso": "3,001kg a 4kg",
+  "Tipo": "Leve",
+  "SKU": "PA64958",
+  "Nome do Produto": "Colchao Pet ProDormir Pet Sleep Foam Grande Porte (80x100x10cm)"
+ },
+ {
+  "Faixa de peso": "3,001kg a 4kg",
+  "Tipo": "Medio",
+  "SKU": "PA53591",
+  "Nome do Produto": "Colchao Beliche Espuma D20 Prodormir Active (78x188x12cm)"
+ },
+ {
+  "Faixa de peso": "3,001kg a 4kg",
+  "Tipo": "Pesado",
+  "SKU": "PA53592",
+  "Nome do Produto": "Colchao Solteiro Espuma D20 Prodormir Active (88x188x12cm)"
+ },
+ {
+  "Faixa de peso": "4,001kg a 5kg",
+  "Tipo": "Leve",
+  "SKU": "PA52754",
+  "Nome do Produto": "Colchao Beliche Espuma D20 ProDormir Advanced (78x188x14cm)"
+ },
+ {
+  "Faixa de peso": "4,001kg a 5kg",
+  "Tipo": "Medio",
+  "SKU": "PA51485",
+  "Nome do Produto": "Colchao Solteirao Espuma D20 Probel Guarda Costas (100x200x12cm)"
+ },
+ {
+  "Faixa de peso": "4,001kg a 5kg",
+  "Tipo": "Pesado",
+  "SKU": "PA64707",
+  "Nome do Produto": "Colchao Pet ProPet Probel Classic Medio Porte (55x75x19cm)"
+ },
+ {
+  "Faixa de peso": "5,001kg a 9kg",
+  "Tipo": "Leve",
+  "SKU": "PA52128",
+  "Nome do Produto": "Colchao Solteiro Espuma D23 Super Resistente Probel 14cm Branco/Preto (88x188x14cm)"
+ },
+ {
+  "Faixa de peso": "5,001kg a 9kg",
+  "Tipo": "Medio",
+  "SKU": "PA51521",
+  "Nome do Produto": "Colchao Casal Espuma D23 Guarda Costas Probel 12cm Branco/Preto (138x188x12cm)"
+ },
+ {
+  "Faixa de peso": "5,001kg a 9kg",
+  "Tipo": "Pesado",
+  "SKU": "PA66792",
+  "Nome do Produto": "Conjunto Box Solteiro Mola Ensacada Probel Bari (88x188x58cm)"
+ },
+ {
+  "Faixa de peso": "9,001kg a 13kg",
+  "Tipo": "Leve",
+  "SKU": "PA52306",
+  "Nome do Produto": "Colchao Solteiro Espuma AD Mega Firme Probel 22cm Bege/Marrom (88x188x22cm)"
+ },
+ {
+  "Faixa de peso": "9,001kg a 13kg",
+  "Tipo": "Medio",
+  "SKU": "PA71020",
+  "Nome do Produto": "Colchao Solteiro Espuma Prodormir Active Techextreme Luxo (88x188x32cm)"
+ },
+ {
+  "Faixa de peso": "9,001kg a 13kg",
+  "Tipo": "Pesado",
+  "SKU": "PA94852",
+  "Nome do Produto": "Colchao Solteiro Mola Probel Chicago (88x188x24cm)"
+ },
+ {
+  "Faixa de peso": "13,001kg a 17kg",
+  "Tipo": "Leve",
+  "SKU": "PAA8622",
+  "Nome do Produto": "Colchao Beliche Mola Ensacada Prodormir Boa Forma Capri"
+ },
+ {
+  "Faixa de peso": "13,001kg a 17kg",
+  "Tipo": "Medio",
+  "SKU": "PA66801",
+  "Nome do Produto": "Conjunto Box Casal Mola Ensacada Probel Cairo Ultra Gel (138x188x68cm)"
+ },
+ {
+  "Faixa de peso": "13,001kg a 17kg",
+  "Tipo": "Pesado",
+  "SKU": "PA92706",
+  "Nome do Produto": "Colchao Solteirao Espuma D45 Prodormir Infinity Hotel (100x200x17cm)"
+ },
+ {
+  "Faixa de peso": "17,001kg a 23kg",
+  "Tipo": "Leve",
+  "SKU": "PA77727",
+  "Nome do Produto": "Cabeceira Casal Prodormir Rio Veludo Marrom com Bege"
+ },
+ {
+  "Faixa de peso": "17,001kg a 23kg",
+  "Tipo": "Medio",
+  "SKU": "PA62751",
+  "Nome do Produto": "Colchao Queen Espuma D33 ProIntense Probel 28cm Bege/Marrom (158x198x28cm)"
+ },
+ {
+  "Faixa de peso": "17,001kg a 23kg",
+  "Tipo": "Pesado",
+  "SKU": "PA67614",
+  "Nome do Produto": "Conjunto Casal Box Mola Ensacada Probel Style Pillow Euro"
+ },
+ {
+  "Faixa de peso": "23,001kg a 30kg",
+  "Tipo": "Leve",
+  "SKU": "PA67504",
+  "Nome do Produto": "Conjunto Box Casal Mola Ensacada Prodormir Vegas Comfort (138x188x58cm)"
+ },
+ {
+  "Faixa de peso": "23,001kg a 30kg",
+  "Tipo": "Medio",
+  "SKU": "PA51815",
+  "Nome do Produto": "Colchao Queen Mola Prodormir Max Sport (158x198x22cm)"
+ },
+ {
+  "Faixa de peso": "23,001kg a 30kg",
+  "Tipo": "Pesado",
+  "SKU": "PA11363C5P",
+  "Nome do Produto": "Poltrona Reclinavel Prodormir Eclipse Corino Marrom"
+ },
+ {
+  "Faixa de peso": "30,001kg a 50kg",
+  "Tipo": "Leve",
+  "SKU": "PA84016",
+  "Nome do Produto": "Colchao Queen Mola Ensacada Probel One Max (158x198x24cm)"
+ },
+ {
+  "Faixa de peso": "30,001kg a 50kg",
+  "Tipo": "Medio",
+  "SKU": "PA67138",
+  "Nome do Produto": "Colchao na Caixa King Espuma D33 Visco Gel Probel"
+ },
+ {
+  "Faixa de peso": "30,001kg a 50kg",
+  "Tipo": "Pesado",
+  "SKU": "PAA4232",
+  "Nome do Produto": "Kit Box Bau Bipartido Queen com Colchao Mola Probel Siena"
+ },
+ {
+  "Faixa de peso": "50,001kg a 100kg",
+  "Tipo": "Leve",
+  "SKU": "PAA2468",
+  "Nome do Produto": "Conjunto Box Viuva Mola Prodormir Hercules New Bege (128x188x66cm)"
+ },
+ {
+  "Faixa de peso": "50,001kg a 100kg",
+  "Tipo": "Medio",
+  "SKU": "PA96890",
+  "Nome do Produto": "Conjunto Box Queen Mola Ensacada Probel Elegancy Springs (158x198x72cm)"
+ },
+ {
+  "Faixa de peso": "50,001kg a 100kg",
+  "Tipo": "Pesado",
+  "SKU": "PAA1595",
+  "Nome do Produto": "Conjunto Box King Mola Ensacada Prodormir King Hard (193x203x72cm)"
+ },
+ {
+  "Faixa de peso": "100,001kg a 150kg",
+  "Tipo": "Leve",
+  "SKU": "PAA2161",
+  "Nome do Produto": "Conjunto Box Queen Mola Ensacada Probel Athos Bambu New (158x198x70cm)"
+ },
+ {
+  "Faixa de peso": "100,001kg a 150kg",
+  "Tipo": "Medio",
+  "SKU": "PA85281",
+  "Nome do Produto": "Conjunto Box King Mola Probel Prohotel Residence (193x203x62cm)"
+ },
+ {
+  "Faixa de peso": "100,001kg a 150kg",
+  "Tipo": "Pesado",
+  "SKU": "PAA2162",
+  "Nome do Produto": "Conjunto Box King Mola Ensacada Probel Athos Bambu New (193x203x70cm)"
+ }
+]
+}

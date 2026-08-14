@@ -1,102 +1,423 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 
 {% block content %}
   <section class="hero-shell">
     <div class="hero-title-wrap">
-      <p class="kicker">Central de Auditoria</p>
-      <h1>Teste de Frete com foco operacional</h1>
-      <p class="hero-subtext">Rode testes unitarios em lote por planilha e exporte os dados de validacao.</p>
+      <p class="kicker">Central</p>
+      <h1>Busque frete com mais controle</h1>
+      <p class="hero-subtext">Selecione dados da base, rode pesquisas e acompanhe resultados em um fluxo mais limpo.</p>
     </div>
     <div class="hero-badges">
-      <span class="hero-badge">Fluxo em 2 etapas</span>
-      <span class="hero-badge">Resultado em XLSX</span>
-      <span class="hero-badge">Monitoramento continuo</span>
+      <span class="hero-badge">Base selecionavel</span>
+      <span class="hero-badge">Resultados sempre acessiveis</span>
+      <span class="hero-badge">Abas retrateis</span>
     </div>
   </section>
 
   <section class="workspace-grid">
     <aside class="side-rail card">
       <h3>Painel rapido</h3>
-      <p class="rail-text">Acesse direto cada fluxo sem rolar a tela toda.</p>
+      <p class="rail-text">Abra apenas o que precisa e mantenha a tela organizada.</p>
 
       <nav class="rail-nav">
-        <a class="rail-link" href="#single-run">Teste unico</a>
-        <a class="rail-link" href="#sheet-run">Lote por planilha</a>
+        <a class="rail-link" href="#db-run">Executar base salva</a>
+        <a class="rail-link" href="#db-manage">Cadastrar base</a>
+        <a class="rail-link" href="#workspace-tabs">Abas de trabalho</a>
+        <a class="rail-link" href="#manual-tab">Guia rapido</a>
       </nav>
 
       <div class="rail-block">
-        <p class="rail-label">Saude da API</p>
-        <a class="link" href="{{ url_for('health') }}" target="_blank" rel="noreferrer">Abrir endpoint health</a>
+        <p class="rail-label">Resultados</p>
+        <a class="link" href="{{ url_for('results_center') }}">Abrir central de resultados</a>
       </div>
 
-      <div class="rail-hint">
-        Dica: use o painel acima para navegar rapidamente entre os fluxos.
+      <div class="rail-block rail-block-accent" aria-label="Download do template">
+        <p class="rail-label">Template da planilha</p>
+        <div class="rail-text">Use se quiser rodar por importacao manual.</div>
+        <div class="rail-actions">
+          <a class="btn btn-secondary btn-compact" href="{{ url_for('template_produtos_xlsx') }}" download>Baixar XLSX</a>
+          <a class="btn btn-secondary btn-compact" href="{{ url_for('template_produtos_csv') }}" download>Baixar CSV</a>
+        </div>
       </div>
     </aside>
 
     <div class="main-stack">
-      <section id="single-run" class="card card-spotlight">
+      {% if last_batch %}
+        <section class="card card-spotlight">
+          <div class="section-head">
+            <h2>Retomar ultima pesquisa</h2>
+            <p>
+              Status: {{ last_batch.done_count }} concluidas, {{ last_batch.running_count }} em execucao, {{ last_batch.queued_count }} na fila.
+            </p>
+          </div>
+          <div class="actions" style="margin-top: 12px;">
+            <a class="btn" href="{{ url_for('batch_detail', batch_id=last_batch.batch_id) }}">Abrir lote</a>
+            <a class="btn btn-secondary" href="{{ url_for('batch_results_xlsx', batch_id=last_batch.batch_id) }}">Baixar XLSX</a>
+          </div>
+        </section>
+      {% endif %}
+
+      <section id="db-run" class="card">
         <div class="section-head">
-          <h2>Teste unico</h2>
-          <p>Validacao imediata de uma URL de produto.</p>
+          <h2>Executar base salva</h2>
+          <p>Escolha links e CEPs da base para consulta. Esta e a area principal da pagina.</p>
         </div>
 
-        <form method="post" action="{{ url_for('run_test') }}" class="form">
-          <label class="field">
-            <div class="label">URL do produto</div>
-            <input name="url" type="url" required value="{{ default_url }}" placeholder="https://site.com/produto" />
-            <small class="field-help">Use a URL final da pagina de produto.</small>
-          </label>
-
-          <label class="field">
-            <div class="label">CEP</div>
-            <input name="cep" type="text" required value="{{ default_cep }}" placeholder="00000-000" />
-          </label>
-
-          <div class="actions">
-            <button class="btn" type="submit">Executar teste</button>
+        {% if db_error %}
+          <div class="hint">Falha ao ler base local: {{ db_error }}</div>
+        {% else %}
+          {% if db_notice %}
+            <div class="checklist" style="margin-bottom: 10px;">
+              <div class="check-item">{{ db_notice }}</div>
+            </div>
+          {% endif %}
+          <div class="checklist">
+            <div class="check-item">Produtos na base: <strong>{{ db_products_count }}</strong></div>
+            <div class="check-item">CEPs na base: <strong>{{ db_ceps_count }}</strong></div>
+            <div class="check-item">Total previsto (base completa): <strong>{{ db_total_jobs }}</strong></div>
           </div>
-        </form>
+
+          <details class="card" id="db-manage" style="margin-top: 12px;">
+            <summary><strong>Cadastrar produtos e CEPs na base</strong></summary>
+            <div class="guide-grid" style="margin-top: 12px;">
+              <form method="post" action="{{ url_for('db_add_product') }}" class="form guide-step">
+                <div class="guide-step-title">Novo produto</div>
+                <label class="field">
+                  <div class="label">Grupo (opcional)</div>
+                  <input name="group_name" type="text" placeholder="Ex.: Linha Premium" />
+                </label>
+                <label class="field">
+                  <div class="label">Nome do produto (opcional)</div>
+                  <input name="product_name" type="text" placeholder="Ex.: Colchao XYZ" />
+                </label>
+                <label class="field">
+                  <div class="label">ID do produto (opcional)</div>
+                  <input name="product_id" type="text" placeholder="Ex.: PA123456" />
+                </label>
+                <label class="field">
+                  <div class="label">Link do produto</div>
+                  <input name="url" type="url" required placeholder="https://..." />
+                </label>
+                <label class="field">
+                  <div class="label">CEPs para vincular ao produto (opcional)</div>
+                  <textarea name="ceps_for_product" rows="3" placeholder="Ex.: 01009-907, 15010-010"></textarea>
+                </label>
+                <div class="actions">
+                  <button class="btn" type="submit">Salvar produto</button>
+                </div>
+              </form>
+
+              <form method="post" action="{{ url_for('db_add_ceps') }}" class="form guide-step">
+                <div class="guide-step-title">Novos CEPs</div>
+                <label class="field">
+                  <div class="label">Lista de CEPs</div>
+                  <textarea name="ceps_text" rows="8" required placeholder="Cole CEPs separados por virgula, espaco ou quebra de linha"></textarea>
+                </label>
+                <div class="actions">
+                  <button class="btn" type="submit">Salvar CEPs</button>
+                </div>
+                <div class="hint">Aceita formatos como 00000-000 ou 00000000.</div>
+              </form>
+            </div>
+          </details>
+
+          <details class="card" id="scheduler" style="margin-top: 12px;">
+            <summary><strong>Pesquisa automatica por agendamento</strong></summary>
+            {% if schedule_notice %}
+              <div class="checklist" style="margin-top: 12px;">
+                <div class="check-item">{{ schedule_notice }}</div>
+              </div>
+            {% endif %}
+
+            <form method="post" action="{{ url_for('schedule_create') }}" class="form" style="margin-top: 12px;">
+              <div class="guide-grid">
+                <label class="field">
+                  <div class="label">Nome do agendamento</div>
+                  <input name="schedule_name" type="text" placeholder="Ex.: Revisao diaria de frete" required />
+                </label>
+                <label class="field">
+                  <div class="label">Modo</div>
+                  <select name="schedule_mode">
+                    <option value="full">Base completa</option>
+                    <option value="selected">Selecao personalizada</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <div class="label">Dia da semana</div>
+                  <select name="schedule_weekday">
+                    <option value="-1">Todos os dias</option>
+                    <option value="0">Segunda-feira</option>
+                    <option value="1">Terca-feira</option>
+                    <option value="2">Quarta-feira</option>
+                    <option value="3">Quinta-feira</option>
+                    <option value="4">Sexta-feira</option>
+                    <option value="5">Sabado</option>
+                    <option value="6" selected>Domingo</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <div class="label">Hora</div>
+                  <input name="schedule_hour" type="number" min="0" max="23" value="18" required />
+                </label>
+                <label class="field">
+                  <div class="label">Minuto</div>
+                  <input name="schedule_minute" type="number" min="0" max="59" value="0" required />
+                </label>
+              </div>
+
+              <div class="hint">O horario usa o relogio local do servidor onde o sistema estiver rodando.</div>
+
+              <div class="guide-grid">
+                <label class="field">
+                  <div class="label">Produtos para agendamento personalizado</div>
+                  <div class="picker" data-picker>
+                    <div class="picker-toolbar">
+                      <input type="text" class="picker-search" placeholder="Buscar produto do agendamento..." data-picker-search />
+                      <div class="picker-actions">
+                        <button class="btn btn-secondary btn-compact" type="button" data-picker-select-all>Selecionar visiveis</button>
+                        <button class="btn btn-secondary btn-compact" type="button" data-picker-clear>Limpar</button>
+                      </div>
+                    </div>
+                    <div class="picker-meta"><span data-picker-count>0</span> selecionado(s)</div>
+                    <div class="picker-list" data-picker-list>
+                      {% for p in db_products_preview %}
+                        <label class="picker-item" data-picker-item data-picker-text="{{ (p.product_name or p.url)|lower }} {{ (p.product_id or '')|lower }}">
+                          <input type="checkbox" name="schedule_product_ids" value="{{ p.id }}" data-picker-input />
+                          <span>{{ p.product_name or p.url }} {% if p.product_id %}({{ p.product_id }}){% endif %}</span>
+                        </label>
+                      {% endfor %}
+                    </div>
+                  </div>
+                </label>
+
+                <label class="field">
+                  <div class="label">CEPs para agendamento personalizado</div>
+                  <div class="picker" data-picker>
+                    <div class="picker-toolbar">
+                      <input type="text" class="picker-search" placeholder="Buscar CEP do agendamento..." data-picker-search />
+                      <div class="picker-actions">
+                        <button class="btn btn-secondary btn-compact" type="button" data-picker-select-all>Selecionar visiveis</button>
+                        <button class="btn btn-secondary btn-compact" type="button" data-picker-clear>Limpar</button>
+                      </div>
+                    </div>
+                    <div class="picker-meta"><span data-picker-count>0</span> selecionado(s)</div>
+                    <div class="picker-list picker-list-cep" data-picker-list>
+                      {% for c in db_ceps_preview %}
+                        <label class="picker-item" data-picker-item data-picker-text="{{ c|lower }}">
+                          <input type="checkbox" name="schedule_ceps" value="{{ c }}" data-picker-input />
+                          <span>{{ c }}</span>
+                        </label>
+                      {% endfor %}
+                    </div>
+                  </div>
+                </label>
+              </div>
+
+              <div class="actions">
+                <button class="btn" type="submit">Salvar agendamento</button>
+              </div>
+            </form>
+
+            <div class="section-head" style="margin-top: 18px;">
+              <h2 style="font-size: 17px; margin-bottom: 0;">Agendamentos cadastrados</h2>
+              <p>Ative, pause, rode manualmente ou remova quando precisar.</p>
+            </div>
+
+            {% if schedules %}
+              <div class="table">
+                <div class="tr th tr-index tr-schedule">
+                  <div>Nome</div>
+                  <div>Horario</div>
+                  <div>Dia</div>
+                  <div>Modo</div>
+                  <div>Status</div>
+                  <div>Ultima execucao</div>
+                  <div>Acoes</div>
+                </div>
+                {% for s in schedules %}
+                  <div class="tr tr-index tr-schedule">
+                    <div class="muted">{{ s.name }}</div>
+                    <div class="mono">{{ "%02d"|format(s.hour) }}:{{ "%02d"|format(s.minute) }}</div>
+                    <div class="muted">{{ s.weekday_label }}</div>
+                    <div class="muted">{{ "Base completa" if s.run_mode == "full" else "Selecao personalizada" }}</div>
+                    <div class="badge badge-{{ 'success' if s.active else 'canceled' }}">{{ "ATIVO" if s.active else "PAUSADO" }}</div>
+                    <div class="muted">
+                      {% if s.last_run_at %}
+                        {{ s.last_run_at[:19]|replace("T", " ") }}
+                      {% else %}
+                        Nunca executado
+                      {% endif %}
+                    </div>
+                    <div class="actions">
+                      <form method="post" action="{{ url_for('schedule_toggle', schedule_id=s.id) }}">
+                        <button class="btn btn-secondary btn-compact" type="submit">{{ "Pausar" if s.active else "Ativar" }}</button>
+                      </form>
+                      <form method="post" action="{{ url_for('schedule_run_now', schedule_id=s.id) }}">
+                        <button class="btn btn-secondary btn-compact" type="submit">Rodar agora</button>
+                      </form>
+                      <form method="post" action="{{ url_for('schedule_delete', schedule_id=s.id) }}">
+                        <button class="btn btn-secondary btn-compact" type="submit">Excluir</button>
+                      </form>
+                    </div>
+                  </div>
+                  {% if s.last_error %}
+                    <div class="hint" style="margin-top: -4px; margin-bottom: 10px;">Ultimo erro: {{ s.last_error }}</div>
+                  {% endif %}
+                {% endfor %}
+              </div>
+            {% else %}
+              <div class="hint" style="margin-top: 12px;">Nenhum agendamento cadastrado ainda.</div>
+            {% endif %}
+          </details>
+
+          <details class="card" open>
+            <summary><strong>Selecao personalizada (links + CEPs)</strong></summary>
+            <form method="post" action="{{ url_for('run_products_db_selected') }}" class="form" style="margin-top: 12px;">
+              <label class="field">
+                <div class="label">Links/produtos da base</div>
+                <div class="picker" data-picker>
+                  <div class="picker-toolbar">
+                    <input type="text" class="picker-search" placeholder="Buscar produto, ID ou parte do link..." data-picker-search />
+                    <div class="picker-actions">
+                      <button class="btn btn-secondary btn-compact" type="button" data-picker-select-all>Selecionar visiveis</button>
+                      <button class="btn btn-secondary btn-compact" type="button" data-picker-clear>Limpar</button>
+                    </div>
+                  </div>
+                  <div class="picker-meta"><span data-picker-count>0</span> selecionado(s)</div>
+                  <div class="picker-list" data-picker-list>
+                    {% for p in db_products_preview %}
+                      <label class="picker-item" data-picker-item data-picker-text="{{ (p.product_name or p.url)|lower }} {{ (p.product_id or '')|lower }}">
+                        <input type="checkbox" name="product_ids" value="{{ p.id }}" data-picker-input />
+                        <span>{{ p.product_name or p.url }} {% if p.product_id %}({{ p.product_id }}){% endif %}</span>
+                      </label>
+                    {% endfor %}
+                  </div>
+                </div>
+              </label>
+
+              <label class="field">
+                <div class="label">CEPs da base</div>
+                <div class="picker" data-picker>
+                  <div class="picker-toolbar">
+                    <input type="text" class="picker-search" placeholder="Buscar CEP..." data-picker-search />
+                    <div class="picker-actions">
+                      <button class="btn btn-secondary btn-compact" type="button" data-picker-select-all>Selecionar visiveis</button>
+                      <button class="btn btn-secondary btn-compact" type="button" data-picker-clear>Limpar</button>
+                    </div>
+                  </div>
+                  <div class="picker-meta"><span data-picker-count>0</span> selecionado(s)</div>
+                  <div class="picker-list picker-list-cep" data-picker-list>
+                    {% for c in db_ceps_preview %}
+                      <label class="picker-item" data-picker-item data-picker-text="{{ c|lower }}">
+                        <input type="checkbox" name="ceps" value="{{ c }}" data-picker-input />
+                        <span>{{ c }}</span>
+                      </label>
+                    {% endfor %}
+                  </div>
+                </div>
+              </label>
+
+              <div class="actions">
+                <button class="btn" type="submit">Executar selecao</button>
+                <a class="btn btn-secondary" href="{{ url_for('results_center') }}">Abrir resultados</a>
+              </div>
+              <div class="hint">Para manter performance da interface, a lista exibe ate 500 itens por tipo.</div>
+            </form>
+          </details>
+
+          <details class="card" style="margin-top: 12px;">
+            <summary><strong>Execucao completa da base</strong></summary>
+            <div class="actions" style="margin-top: 12px;">
+              <form method="post" action="{{ url_for('run_products_db') }}">
+                <button class="btn" type="submit">Executar tudo</button>
+              </form>
+              <a class="btn btn-secondary" href="{{ url_for('manual') }}#base-salva">Como funciona</a>
+            </div>
+          </details>
+        {% endif %}
       </section>
 
-      <section id="sheet-run" class="card">
+      <section id="workspace-tabs" class="card" data-accordion-group>
         <div class="section-head">
-          <h2>Lote por planilha</h2>
-          <p>Importe .xlsx ou .csv para auditar multiplos produtos.</p>
+          <h2>Abas de trabalho</h2>
+          <p>Abra e feche cada area conforme a necessidade.</p>
         </div>
 
-        <div class="hint">
-          Baixe o template:
-          <a class="link" href="{{ url_for('template_produtos_xlsx') }}">XLSX</a>
-          ou
-          <a class="link" href="{{ url_for('template_produtos_csv') }}">CSV</a>.
-        </div>
+        <details class="card" id="sheet-run" data-accordion-item>
+          <summary><strong>Pesquisa em lote por planilha</strong></summary>
+          <form method="post" action="{{ url_for('run_products_sheet') }}" enctype="multipart/form-data" class="form" style="margin-top: 12px;">
+            <div class="field">
+              <div class="label">Enviar planilha (.xlsx ou .csv)</div>
+              <label class="file-drop" for="sheet-input">
+                <input id="sheet-input" class="file-drop-input" name="sheet" type="file" accept=".xlsx,.csv" required />
+                <div class="file-drop-body">
+                  <div class="file-drop-title">Arraste o arquivo aqui ou clique para selecionar</div>
+                  <div class="file-drop-subtitle">Formatos aceitos: XLSX e CSV</div>
+                </div>
+                <div class="file-drop-meta" aria-live="polite">
+                  <span class="file-drop-name" data-file-name>Nenhum arquivo selecionado</span>
+                  <span class="file-drop-cta">Escolher arquivo</span>
+                </div>
+              </label>
+            </div>
 
-        <form method="post" action="{{ url_for('run_products_sheet') }}" enctype="multipart/form-data" class="form">
-          <label class="field">
-            <div class="label">Enviar planilha (.xlsx ou .csv)</div>
-            <input name="sheet" type="file" accept=".xlsx,.csv" required />
-          </label>
+            <label class="field">
+              <div class="label">CEP padrao</div>
+              <input name="cep" type="text" required value="{{ default_cep }}" placeholder="00000-000" />
+            </label>
 
-          <label class="field">
-            <div class="label">CEP padrao</div>
-            <input name="cep" type="text" required value="{{ default_cep }}" placeholder="00000-000" />
-          </label>
+            <div class="actions">
+              <button class="btn" type="submit">Executar planilha</button>
+            </div>
+          </form>
+        </details>
 
-          <div class="actions">
-            <button class="btn" type="submit">Executar planilha</button>
+        <details class="card" style="margin-top: 12px;" {% if recent_batches %}open{% endif %} data-accordion-item>
+          <summary><strong>Pesquisas recentes</strong></summary>
+          {% if recent_batches %}
+            <div class="table" style="margin-top: 12px;">
+              <div class="tr th tr-index">
+                <div>ID</div>
+                <div>Status</div>
+                <div>Itens</div>
+                <div>Criado</div>
+                <div>Abrir</div>
+              </div>
+              {% for b in recent_batches %}
+                <div class="tr tr-index">
+                  <div class="mono">{{ b.batch_id[:10] }}</div>
+                  <div class="badge badge-{{ b.status|lower }}">{{ b.status }}</div>
+                  <div class="muted">{{ b.total_jobs }}</div>
+                  <div class="muted">{{ (b.created_at or "")[:19]|replace("T", " ") }}</div>
+                  <div><a class="link" href="{{ url_for('batch_detail', batch_id=b.batch_id) }}">ver</a></div>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="hint" style="margin-top: 12px;">Nenhuma pesquisa registrada ainda.</div>
+          {% endif %}
+        </details>
+
+        <details class="card" id="manual-tab" style="margin-top: 12px;" data-accordion-item>
+          <summary><strong>Guia rapido</strong></summary>
+          <div class="guide-grid" style="margin-top: 12px;">
+            <div class="guide-step">
+              <div class="guide-step-title">1) Selecione base ou planilha</div>
+              <div class="muted">Use base salva para mais controle ou planilha para importacao pontual.</div>
+            </div>
+            <div class="guide-step">
+              <div class="guide-step-title">2) Execute a pesquisa</div>
+              <div class="muted">Acompanhe o lote em tempo real pela propria tela de detalhes.</div>
+            </div>
+            <div class="guide-step">
+              <div class="guide-step-title">3) Revise e exporte</div>
+              <div class="muted">Use a central de resultados para abrir lotes e baixar XLSX quando quiser.</div>
+            </div>
           </div>
-
-          <div class="checklist">
-            <div class="check-item">Arquivo com extensao .xlsx ou .csv</div>
-            <div class="check-item">Campo de link do produto preenchido</div>
-            <div class="check-item">CEP por linha e opcional (usa CEP padrao quando vazio)</div>
+          <div class="actions" style="margin-top: 12px;">
+            <a class="btn btn-secondary" href="{{ url_for('manual') }}">Abrir manual completo</a>
           </div>
-
-          <div class="hint">
-            Colunas aceitas: <code>Grupo</code>, <code>Nome do produto</code>, <code>ID do produto</code>, <code>Link do produto</code>, <code>CEPs para testar</code>.
-          </div>
-        </form>
+        </details>
       </section>
     </div>
   </section>

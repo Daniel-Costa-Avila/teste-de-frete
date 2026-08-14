@@ -2,8 +2,10 @@ import os
 import re
 import uuid
 from urllib.parse import urlparse
-from selenium.common.exceptions import InvalidSessionIdException, TimeoutException, WebDriverException
+import time
+from selenium.common.exceptions import InvalidSessionIdException, TimeoutException, WebDriverException, StaleElementReferenceException
 from app.infra.cep import normalize_cep
+from app.infra.artifacts import cleanup_expired_artifacts
 from app.domain.models import TestResult
 from app.pages.probel_product_page import ProbelProductPage
 from app.pages.freight_widget_product_page import FreightWidgetProductPage
@@ -14,6 +16,7 @@ class FreightTestService:
         self.driver = driver
         self.settings = settings
         os.makedirs(settings.artifacts_dir, exist_ok=True)
+        cleanup_expired_artifacts(settings.artifacts_dir, settings.artifact_retention_days)
 
     def _artifact_path(self, name: str, artifact_prefix: str | None) -> str:
         filename = f"{artifact_prefix}_{name}" if artifact_prefix else name
@@ -105,7 +108,23 @@ class FreightTestService:
         )
 
         try:
-            page.open(url)
+            try:
+                page.open(url)
+            except TimeoutException as exc:
+                result.status = "ERRO_NO_LINK"
+                result.errors.append(f"Falha ao abrir o link (timeout): {exc!r}")
+                result.artifacts.screenshot = self._save_screenshot("error.png", artifact_prefix)
+                result.artifacts.html = self._save_html("error.html", artifact_prefix)
+                return result
+            except WebDriverException as exc:
+                result.status = "ERRO_NO_LINK"
+                result.errors.append(f"Falha ao abrir o link: {exc!r}")
+                if getattr(exc, "msg", None):
+                    result.errors.append(f"WebDriver msg: {exc.msg}")
+                result.artifacts.screenshot = self._save_screenshot("error.png", artifact_prefix)
+                result.artifacts.html = self._save_html("error.html", artifact_prefix)
+                return result
+
             if page.is_blocked():
                 result.status = "BLOCKED"
                 result.errors.append("Possivel desafio anti-bot detectado.")
@@ -113,7 +132,22 @@ class FreightTestService:
                 result.artifacts.html = self._save_html("blocked.html", artifact_prefix)
                 return result
 
-            result.product_name = page.get_product_name()
+            try:
+                result.product_name = page.get_product_name()
+            except TimeoutException as exc:
+                result.status = "ERRO_NO_LINK"
+                result.errors.append(f"Produto nao identificado na pagina (timeout): {exc!r}")
+                result.artifacts.screenshot = self._save_screenshot("error.png", artifact_prefix)
+                result.artifacts.html = self._save_html("error.html", artifact_prefix)
+                return result
+            except RuntimeError as exc:
+                if str(exc) == "PRODUCT_NAME_NOT_FOUND":
+                    result.status = "ERRO_NO_LINK"
+                    result.errors.append("Produto nao identificado na pagina (link invalido ou produto inexistente).")
+                    result.artifacts.screenshot = self._save_screenshot("error.png", artifact_prefix)
+                    result.artifacts.html = self._save_html("error.html", artifact_prefix)
+                    return result
+                raise
 
             try:
                 page.fill_cep(cep)
@@ -144,15 +178,27 @@ class FreightTestService:
                 raise
 
             try:
-                freight = page.read_freight_result()
+                try:
+                    freight = page.read_freight_result()
+                except StaleElementReferenceException:
+                    time.sleep(0.3)
+                    freight = page.read_freight_result()
             except RuntimeError as exc:
                 # Retry once for widgets that render shipping options asynchronously after the first click.
                 if str(exc) == "FREIGHT_RESULT_NOT_FOUND":
                     try:
                         page.calculate_freight()
-                        freight = page.read_freight_result()
+                        try:
+                            freight = page.read_freight_result()
+                        except StaleElementReferenceException:
+                            time.sleep(0.3)
+                            freight = page.read_freight_result()
                     except Exception:
-                        raise
+                        result.status = "FREIGHT_NOT_RETURNED"
+                        result.errors.append("Resultado de frete nao identificado no DOM.")
+                        result.artifacts.screenshot = self._save_screenshot("freight_not_returned.png", artifact_prefix)
+                        result.artifacts.html = self._save_html("freight_not_returned.html", artifact_prefix)
+                        return result
                 else:
                     raise
             deduped_options = self._dedupe_freight_options(list(freight.get("options") or []))

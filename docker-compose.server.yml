@@ -4,7 +4,6 @@ services:
   selenoid:
     image: aerokube/selenoid:latest-release
     container_name: selenoid
-    network_mode: bridge
     ports:
       - "4444:4444"
     volumes:
@@ -18,19 +17,27 @@ services:
       - "-limit"
       - "5"
       - "-timeout"
-      - "5m"
+      - "15m"
       - "-service-startup-timeout"
       - "2m"
       - "-session-attempt-timeout"
       - "2m"
+    restart: unless-stopped
 
-  selenoid-ui:
-    image: aerokube/selenoid-ui:latest-release
-    container_name: selenoid-ui
+  freight-ui:
+    build: .
+    container_name: freight-ui
+    env_file:
+      - .env
     ports:
       - "8080:8080"
-    command:
-      - "--selenoid-uri"
-      - "http://selenoid:4444"
+    volumes:
+      - ./artifacts:/app/artifacts
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     depends_on:
       - selenoid

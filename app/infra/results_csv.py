@@ -12,6 +12,7 @@ _WRITE_LOCK = threading.Lock()
 
 CSV_COLUMNS: list[str] = [
     "Data da execução",
+    "Status",
     "Fonte",
     "URL",
     "CEP",
@@ -35,16 +36,22 @@ def _format_price_kind(value: str | None) -> str:
 
 def _flatten_result(result: TestResult) -> dict[str, str]:
     price = "" if result.freight.price is None else str(result.freight.price)
+    status = str(result.status or "").upper().replace("_", " ").strip()
+    kind_text = _format_price_kind(result.freight.price_kind)
+    unavailable_label = _format_price_kind("UNKNOWN")
+    if kind_text == unavailable_label and status and status not in {"SUCCESS", "DONE"}:
+        kind_text = status
 
     return {
         "Data da execução": datetime.now().isoformat(timespec="seconds"),
+        "Status": status,
         "Fonte": result.source,
         "URL": result.url,
         "CEP": result.cep,
         "Produto": result.product_name or "",
         "Valor do frete": price,
         "Moeda": result.freight.currency or "",
-        "Tipo do frete": _format_price_kind(result.freight.price_kind),
+        "Tipo do frete": kind_text,
         "Prazo de entrega": result.freight.delivery_time_text or "",
         "Modo de entrega": result.freight.delivery_mode or "",
     }

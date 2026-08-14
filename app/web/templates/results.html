@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Resultados{% endblock %}
+
+{% block content %}
+  <section class="card">
+    <div class="section-head">
+      <h2>Central de resultados</h2>
+      <p>Area sempre disponivel para acompanhar pesquisas e baixar dados gerados.</p>
+    </div>
+    <div class="actions">
+      <a class="btn btn-secondary" href="{{ url_for('index') }}">Voltar para home</a>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Agendamentos automaticos</h2>
+    {% if schedules %}
+      <div class="table">
+        <div class="tr th tr-index tr-schedule">
+          <div>Nome</div>
+          <div>Horario</div>
+          <div>Dia</div>
+          <div>Modo</div>
+          <div>Status</div>
+          <div>Ultima execucao</div>
+          <div>Lote</div>
+        </div>
+        {% for s in schedules %}
+          <div class="tr tr-index tr-schedule">
+            <div class="muted">{{ s.name }}</div>
+            <div class="mono">{{ "%02d"|format(s.hour) }}:{{ "%02d"|format(s.minute) }}</div>
+            <div class="muted">{{ s.weekday_label }}</div>
+            <div class="muted">{{ "Base completa" if s.run_mode == "full" else "Selecao personalizada" }}</div>
+            <div class="badge badge-{{ 'success' if s.active else 'canceled' }}">{{ "ATIVO" if s.active else "PAUSADO" }}</div>
+            <div class="muted">{{ (s.last_run_at or "Nunca executado")[:19]|replace("T", " ") }}</div>
+            <div>
+              {% if s.last_batch_id %}
+                <a class="link" href="{{ url_for('batch_detail', batch_id=s.last_batch_id) }}">abrir ultimo lote</a>
+              {% else %}
+                <span class="muted">-</span>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="hint">Nenhum agendamento cadastrado ainda.</div>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Pesquisas recentes</h2>
+    {% if recent_batches %}
+      <div class="table">
+        <div class="tr th tr-index">
+          <div>ID</div>
+          <div>Status</div>
+          <div>Itens</div>
+          <div>Criado</div>
+          <div>Acoes</div>
+        </div>
+        {% for b in recent_batches %}
+          <div class="tr tr-index">
+            <div class="mono">{{ b.batch_id[:10] }}</div>
+            <div class="badge badge-{{ b.status|lower }}">{{ b.status }}</div>
+            <div class="muted">{{ b.total_jobs }}</div>
+            <div class="muted">{{ (b.created_at or "")[:19]|replace("T", " ") }}</div>
+            <div class="actions">
+              <a class="link" href="{{ url_for('batch_detail', batch_id=b.batch_id) }}">abrir</a>
+              <a class="link" href="{{ url_for('batch_results_xlsx', batch_id=b.batch_id) }}">baixar xlsx</a>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="hint">Nenhuma pesquisa registrada ainda.</div>
+    {% endif %}
+  </section>
+{% endblock %}
