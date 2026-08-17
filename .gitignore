@@ -28,3 +28,6 @@ skills-lock.json
 # Accidental firebase init dirs
 no/
 y/
+
+# Watchdog logs
+scripts/*.log
