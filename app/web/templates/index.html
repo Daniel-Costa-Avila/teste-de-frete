@@ -1,5 +1,7 @@
 ﻿{% extends "base.html" %}
 
+{% block head %}<script defer src="{{ url_for('static', filename='brasil-api.js') }}"></script>{% endblock %}
+
 {% block content %}
   <section class="hero-shell">
     <div class="hero-title-wrap">
@@ -365,6 +367,7 @@
               <div class="label">CEP padrao</div>
               <input name="cep" type="text" required value="{{ default_cep }}" placeholder="00000-000" />
             </label>
+<div><button type="button" class="btn btn-secondary" data-brasil-cep="{{ url_for('brasil_api.lookup', resource='cep') }}">Consultar endere&#231;o</button><p class="hint" role="status"></p></div>
 
             <div class="actions">
               <button class="btn" type="submit">Executar planilha</button>

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% set nav_active = 'brasil_api' %}
+{% block head %}<script defer src="{{ url_for('static', filename='brasil-recursos.js') }}"></script>{% endblock %}
+{% block content %}
+<section class="card">
+  <h2>Consultas BrasilAPI</h2>
+  <p>Consulte endereços, coordenadas, dias úteis e municípios do IBGE para planejar seus testes de frete.</p>
+  <p class="hint">Os valores e prazos de frete são consultados nas lojas. Os dados de localização vêm da <a href="https://brasilapi.com.br/docs" target="_blank" rel="noopener">BrasilAPI</a>.</p>
+  <form class="form" method="get">
+    <input type="hidden" name="recurso" value="cep">
+    <label class="field">CEP<input name="valor" inputmode="numeric" maxlength="9" pattern="[0-9]{5}-?[0-9]{3}" required placeholder="00000-000" value="{{ value if resource == 'cep' else '' }}"></label>
+    <div class="actions"><button class="btn">Consultar CEP</button></div>
+  </form>
+  <form class="form" method="get">
+    <input type="hidden" name="recurso" value="municipios">
+    <h3>Municípios IBGE</h3>
+    <label class="field">Estado<select name="valor" required>{% for uf in ufs %}<option value="{{ uf }}" {% if value == uf %}selected{% endif %}>{{ uf }}</option>{% endfor %}</select></label>
+    <div class="actions"><button class="btn btn-secondary">Consultar municípios</button><a class="btn btn-secondary" href="{{ url_for('brasil_api.page', recurso='estados') }}">Listar estados</a></div>
+  </form>
+</section>
+<section class="card">
+  <h2>Geolocalização</h2>
+  <p>Informe latitude e longitude para consultar a cidade e o país.</p>
+  <form class="form" method="get">
+    <input type="hidden" name="recurso" value="geolocalizacao">
+    <label class="field">Latitude<input name="latitude" inputmode="decimal" required maxlength="24" placeholder="-23.5505" value="{{ request.args.get('latitude', '') }}"></label>
+    <label class="field">Longitude<input name="longitude" inputmode="decimal" required maxlength="24" placeholder="-46.6333" value="{{ request.args.get('longitude', '') }}"></label>
+    <div class="actions"><button class="btn">Consultar localização</button></div>
+  </form>
+</section>
+<section class="card">
+  <h2>Dias úteis</h2>
+  <p>Conta as datas úteis entre o início e o fim, incluindo os dois limites quando forem dias úteis.</p>
+  <form class="form" method="get">
+    <input type="hidden" name="recurso" value="diasuteis">
+    <label class="field">Data inicial<input name="dataInicial" type="date" required value="{{ request.args.get('dataInicial', '') }}"></label>
+    <label class="field">Data final<input name="dataFinal" type="date" required value="{{ request.args.get('dataFinal', '') }}"></label>
+    <label class="field">Feriados nacionais<select name="incluirFeriadosNacionais">
+      <option value="true" {% if request.args.get('incluirFeriadosNacionais', 'true') == 'true' %}selected{% endif %}>Descontar feriados nacionais</option>
+      <option value="false" {% if request.args.get('incluirFeriadosNacionais') == 'false' %}selected{% endif %}>Contar feriados que caem de segunda a sexta</option>
+    </select></label>
+    <p class="hint">Sábados e domingos são excluídos. Feriados estaduais e municipais não são considerados. Intervalo máximo: 366 dias.</p>
+    <div class="actions"><button class="btn">Consultar dias úteis</button></div>
+  </form>
+</section>
+{% if error %}<div class="card" role="alert">{{ error }}</div>{% endif %}
+{% if data is not none %}
+<section class="card" aria-label="Resultado da consulta">
+  <h2>Resultado</h2>
+  {% if resource == 'cep' %}
+    <p><strong>{{ data.cep }}</strong> · {{ data.city }} / {{ data.state }}</p>
+    <p>{{ data.street or 'Logradouro não informado' }} · {{ data.neighborhood or 'Bairro não informado' }}</p>
+    <form method="post" action="{{ url_for('db_add_ceps') }}">
+      <input type="hidden" name="ceps_text" value="{{ data.cep }}">
+      <button class="btn">Adicionar CEP à base de testes</button>
+    </form>
+  {% elif resource == 'geolocalizacao' %}
+    <h3>Localização consultada</h3>
+    <p><strong>{{ data.city or 'Cidade não informada' }}</strong> · {{ data.country or 'País não informado' }}</p>
+    <p>Latitude: {{ request.args.get('latitude') }} · Longitude: {{ request.args.get('longitude') }}</p>
+  {% elif resource == 'diasuteis' %}
+    <h3>{{ data.diasUteis|length }} dias úteis</h3>
+    <p>De {{ request.args.get('dataInicial') }} até {{ request.args.get('dataFinal') }}.</p>
+    {% if data.diasUteis %}<ul>{% for day in data.diasUteis %}<li>{{ day[8:10] }}/{{ day[5:7] }}/{{ day[:4] }}</li>{% endfor %}</ul>{% else %}<p>Nenhum dia útil no intervalo consultado.</p>{% endif %}
+  {% elif resource == 'municipios' %}
+    <h3>Municípios IBGE · {{ value|upper }}</h3>
+    <label class="field">Buscar município ou código IBGE<input type="search" data-municipio-search placeholder="Digite o nome ou código"></label>
+    <p role="status" data-municipio-count>{{ data|length }} registros encontrados.</p>
+    <ul data-municipios>{% for row in data %}<li>{{ row.nome }} — {{ row.codigo_ibge }}</li>{% endfor %}</ul>
+  {% else %}
+    <p>{{ data|length }} registros encontrados.</p>
+    <ul>{% for row in data %}<li>{{ row.nome }} — {{ row.sigla if resource == 'estados' else row.codigo_ibge }}</li>{% endfor %}</ul>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

@@ -748,6 +748,8 @@ def _run_jobs_in_chunks(
 
 def create_app() -> Flask:
     app = Flask(__name__)
+    from app.web.brasil_api import create_blueprint
+    app.register_blueprint(create_blueprint())
     settings = Settings()
     cleanup_expired_artifacts(settings.artifacts_dir, settings.artifact_retention_days)
     # When mounted behind a reverse proxy (e.g. under /frete), trust X-Forwarded-* headers.

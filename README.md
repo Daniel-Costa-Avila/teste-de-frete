@@ -2,6 +2,41 @@
 
 UI web (Flask) para rodar testes de frete em páginas de produto.
 
+## Integração BrasilAPI
+
+O menu **BrasilAPI** permite consultar CEPs, estados e municípios e adicionar um
+CEP consultado à base de testes. Em **Planilha**, o botão
+**Consultar endereço** verifica o endereço do CEP antes de executar o frete.
+
+A integração utiliza `https://brasilapi.com.br/api`, sem chave e sem precisar
+executar o projeto Node da pasta `Api Brasil`. Consultas são pontuais, acionadas
+pelo usuário, com timeout de 10 segundos e cache em memória por uma hora
+(até 256 consultas por processo). Indisponibilidade do provedor não impede os
+testes de frete. A inclusão na base usa o cadastro existente de CEPs; endereço,
+UF e município consultados são exibidos, mas não gravados nesse cadastro.
+
+Rotas: `/brasil-api`, `/api/brasil/cep?valor=01001000`,
+`/api/brasil/estados` e `/api/brasil/municipios?valor=SP`.
+As rotas respeitam a autenticação Basic Auth e o prefixo público do sistema.
+Valores e prazos de frete continuam sendo obtidos nas lojas.
+
+Recursos adicionais na mesma tela:
+
+- **Geolocalização**: cidade e país por latitude (-90 a 90) e longitude (-180 a 180).
+  Aceita vírgula ou ponto decimal; não solicita localização do navegador.
+  Rota: `/api/brasil/geolocalizacao?latitude=-23.55&longitude=-46.63`.
+- **Dias úteis**: lista e total entre datas inclusivas, com no máximo 366 dias
+  de diferença. Exclui fins de semana; por padrão desconta feriados nacionais.
+  Feriados estaduais e municipais não entram no cálculo do provedor.
+  Rota: `/api/brasil/diasuteis?dataInicial=2026-09-01&dataFinal=2026-09-08&incluirFeriadosNacionais=true`.
+- **Municípios IBGE**: lista por UF com busca local por nome ou código,
+  ignorando acentos, sem novas chamadas à API durante a filtragem.
+
+As consultas dependem da disponibilidade da BrasilAPI. Respostas HTTP 403 do
+provedor são exibidas como indisponibilidade, sem apresentar dados simulados.
+
+Documentação do provedor: https://brasilapi.com.br/docs
+
 ## Manual completo
 
 Veja `MANUAL.md`.
