@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+
+{% set nav_active = 'base' %}
+
+{% block title %}Base de produtos e CEPs{% endblock %}
+
+{% block content %}
+  {% if notice %}
+    <div class="notice notice-{{ 'error' if notice_kind == 'error' else 'success' }}" data-notice>{{ notice }}</div>
+  {% endif %}
+
+  <section class="card">
+    <div class="section-head">
+      <h2>Base salva</h2>
+      <p>O que está cadastrado aqui alimenta as consultas da home e os agendamentos.</p>
+    </div>
+
+    {% if db_error %}
+      <div class="alert">Falha ao ler a base local: {{ db_error }}</div>
+    {% else %}
+      <div class="stat-strip">
+        <div class="stat-tile">
+          <div class="stat-label">Produtos</div>
+          <div class="stat-value">{{ db_products_count|milhar }}</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-label">CEPs</div>
+          <div class="stat-value">{{ db_ceps_count|milhar }}</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-label">Base completa</div>
+          <div class="stat-value">{{ (db_products_count * db_ceps_count)|milhar }} <span class="stat-unit">consultas</span></div>
+        </div>
+      </div>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <div class="section-head">
+      <h2>Cadastrar</h2>
+      <p>Adicione um produto ou cole uma lista de CEPs.</p>
+    </div>
+
+    <div class="guide-grid">
+      <form method="post" action="{{ url_for('db_add_product') }}" class="form guide-step">
+        <div class="guide-step-title">Novo produto</div>
+        <label class="field">
+          <div class="label">Grupo (opcional)</div>
+          <input name="group_name" type="text" placeholder="Ex.: Linha Premium" />
+        </label>
+        <label class="field">
+          <div class="label">Nome do produto (opcional)</div>
+          <input name="product_name" type="text" placeholder="Ex.: Colchão Casal Premium" />
+        </label>
+        <label class="field">
+          <div class="label">ID do produto (opcional)</div>
+          <input name="product_id" type="text" placeholder="Ex.: PA123456" />
+          <span class="field-help">Pode repetir: o mesmo produto em lojas diferentes é um cadastro por loja.</span>
+        </label>
+        <label class="field">
+          <div class="label">Link do produto</div>
+          <input name="url" type="url" required placeholder="https://..." />
+        </label>
+        <label class="field">
+          <div class="label">CEPs para vincular ao produto (opcional)</div>
+          <textarea name="ceps_for_product" rows="3" placeholder="Ex.: 01009-907, 15010-010"></textarea>
+        </label>
+        <div class="actions">
+          <button class="btn" type="submit" data-loading-label="Salvando…">Salvar produto</button>
+        </div>
+      </form>
+
+      <form method="post" action="{{ url_for('db_add_ceps') }}" class="form guide-step">
+        <div class="guide-step-title">Novos CEPs</div>
+        <label class="field">
+          <div class="label">Lista de CEPs</div>
+          <textarea name="ceps_text" rows="8" required placeholder="Cole os CEPs separados por vírgula, espaço ou quebra de linha"></textarea>
+        </label>
+        <div class="actions">
+          <button class="btn" type="submit" data-loading-label="Salvando…">Salvar CEPs</button>
+        </div>
+        <div class="hint">Aceita os formatos 00000-000 e 00000000.</div>
+      </form>
+    </div>
+  </section>
+
+  {% if not db_error %}
+    <section class="card">
+      <div class="section-head section-head-row">
+        <div>
+          <h2>Produtos cadastrados</h2>
+          <p>
+            {{ db_products|length }} em exibição{% if db_products_truncated %} · mais {{ db_products_truncated }} na base{% endif %}.
+          </p>
+        </div>
+        <input type="text" class="table-search" placeholder="Buscar produto ou ID..." data-list-search="[data-db-product]" aria-label="Buscar produto" />
+      </div>
+
+      {% if db_products %}
+        <div class="table">
+          <div class="tr th tr-db">
+            <div>Produto</div>
+            <div>ID</div>
+            <div>Loja</div>
+            <div>Grupo</div>
+            <div>Link</div>
+          </div>
+          {% for p in db_products %}
+            <div class="tr tr-db" data-db-product data-search="{{ (p.product_name or '')|lower }} {{ (p.product_id or '')|lower }} {{ (p.site or '')|lower }} {{ p.url|lower }}">
+              <div data-label="Produto">{{ p.product_name or "—" }}</div>
+              <div class="mono muted" data-label="ID">{{ p.product_id or "—" }}</div>
+              <div class="muted" data-label="Loja">{{ p.site or "—" }}</div>
+              <div class="muted" data-label="Grupo">{{ p.group or "—" }}</div>
+              <div data-label="Link"><a class="link" href="{{ p.url }}" target="_blank" rel="noreferrer">abrir</a></div>
+            </div>
+          {% endfor %}
+        </div>
+        <div class="table-empty" data-list-empty hidden>Nenhum produto corresponde à busca.</div>
+      {% else %}
+        <div class="hint">Nenhum produto cadastrado ainda.</div>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <div class="section-head">
+        <h2>CEPs cadastrados</h2>
+        <p>{{ db_ceps|length }} em exibição{% if db_ceps_truncated %} · mais {{ db_ceps_truncated }} na base{% endif %}.</p>
+      </div>
+      {% if db_ceps %}
+        <div class="cep-cloud">
+          {% for c in db_ceps %}
+            <span class="cep-chip mono">{{ c }}</span>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="hint">Nenhum CEP cadastrado ainda.</div>
+      {% endif %}
+    </section>
+  {% endif %}
+{% endblock %}

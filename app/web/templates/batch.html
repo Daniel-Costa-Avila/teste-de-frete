@@ -1,70 +1,121 @@
 {% extends "base.html" %}
 
-{% block title %}Lote {{ batch_id[:10] }}{% endblock %}
-
-{% block head %}
-  {% if auto_refresh %}
-    <meta http-equiv="refresh" content="2" />
-  {% endif %}
-{% endblock %}
+{% block title %}Lote {{ short_id }}{% endblock %}
 
 {% block content %}
-  <section class="card">
+  <section
+    class="card card-spotlight"
+    data-batch-live
+    data-batch-url="{{ url_for('batch_api', batch_id=batch_id) }}"
+  >
     <div class="run-head">
-      <h2>Lote</h2>
+      <div>
+        <div class="batch-title">
+          <h2 style="margin: 0;">Lote de {{ created_label }}</h2>
+          <span class="badge badge-{{ summary.status|lower }}" data-batch-status>{{ summary.status_label }}</span>
+        </div>
+        <div class="batch-subtitle">
+          <span class="mono">{{ short_id }}</span>
+          <span>·</span>
+          <span>{{ summary.total }} consultas</span>
+          <span class="live-pill" data-batch-live-pill {% if not summary.running %}hidden{% endif %}>
+            <span class="live-dot"></span> Atualizando ao vivo
+          </span>
+        </div>
+      </div>
       <div class="actions">
-        <a class="btn btn-secondary" href="{{ url_for('index') }}">Voltar</a>
-        {% if auto_refresh %}
-          <form method="post" action="{{ url_for('batch_cancel', batch_id=batch_id) }}">
-            <button class="btn btn-secondary" type="submit">Cancelar lote</button>
-          </form>
-        {% endif %}
-        <div class="mono">{{ batch_id }}</div>
+        <form method="post" action="{{ url_for('batch_cancel', batch_id=batch_id) }}" data-batch-cancel data-confirm="Cancelar as consultas que ainda não terminaram deste lote?" {% if not summary.running %}hidden{% endif %}>
+          <button class="btn-link-danger" type="submit" data-loading-label="Cancelando…">Cancelar lote</button>
+        </form>
+        <a class="btn" href="{{ url_for('batch_results_xlsx', batch_id=batch_id) }}">Baixar XLSX</a>
       </div>
     </div>
-    <div class="hint">
-      Este lote reune varias execucoes criadas na mesma submissao.
-      {% if auto_refresh %}Atualizando automaticamente...{% endif %}
+
+    <div class="progress-head">
+      <div class="progress-headline">
+        <span data-batch-percent>{{ summary.percent }}%</span>
+        <span class="progress-headline-sub">— <span data-batch-done>{{ summary.done }}</span> de <span data-batch-total>{{ summary.total }}</span> consultas</span>
+      </div>
+      <div class="muted" data-batch-eta>
+        {% if summary.running and summary.eta_text %}Tempo restante estimado: <strong>~{{ summary.eta_text }}</strong>{% endif %}
+      </div>
     </div>
-    <div class="hint" style="margin-top: 8px;">
-      Status: {{ done_count }} concluidas, {{ running_count }} em execucao, {{ queued_count }} na fila.
-      {% if progress and progress.state == "running" and progress.current_start and progress.current_end %}
-        Processando lote {{ progress.current_start }}-{{ progress.current_end }} de {{ progress.total_items }} itens.
-      {% elif progress and progress.state == "done" %}
-        Processamento finalizado ({{ progress.total_items }} itens).
-      {% elif progress and progress.state == "error" %}
-        Erro no controlador de lotes. Verifique os logs do servidor.
-      {% endif %}
+
+    <div class="progress progress-large" role="progressbar" aria-valuenow="{{ summary.percent }}" aria-valuemin="0" aria-valuemax="100" aria-live="polite">
+      <div class="progress-seg progress-seg-ok" data-seg="ok" style="width: {{ (summary.success_count * 100 / summary.total) if summary.total else 0 }}%"></div>
+      <div class="progress-seg progress-seg-warn" data-seg="warning" style="width: {{ (summary.warning_count * 100 / summary.total) if summary.total else 0 }}%"></div>
+      <div class="progress-seg progress-seg-error" data-seg="error" style="width: {{ ((summary.error_count + summary.canceled_count) * 100 / summary.total) if summary.total else 0 }}%"></div>
+      <div class="progress-seg progress-seg-running" data-seg="running" style="width: {{ (summary.running_count * 100 / summary.total) if summary.total else 0 }}%"></div>
     </div>
-    <div class="actions" style="margin-top: 12px;">
-      <a class="link" href="{{ url_for('batch_results_xlsx', batch_id=batch_id) }}">Baixar XLSX</a>
+
+    <div class="progress-legend">
+      <span><i class="swatch swatch-ok"></i><span data-batch-success>{{ summary.success_count }}</span> concluídas</span>
+      <span><i class="swatch swatch-warn"></i><span data-batch-warning>{{ summary.warning_count }}</span> sem retorno</span>
+      <span><i class="swatch swatch-error"></i><span data-batch-error>{{ summary.error_count }}</span> com erro</span>
+      <span><i class="swatch swatch-running"></i><span data-batch-running>{{ summary.running_count }}</span> em execução</span>
+      <span><i class="swatch swatch-queued"></i><span data-batch-queued>{{ summary.queued_count }}</span> na fila</span>
+    </div>
+  </section>
+
+  <section class="stat-strip stat-strip-4">
+    <div class="stat-tile">
+      <div class="stat-label">Frete grátis</div>
+      <div class="stat-value stat-value-ok" data-batch-free>{{ summary.free_count }}</div>
+      <div class="stat-foot" data-batch-free-share>
+        {% if summary.free_count or summary.paid_count %}{{ summary.free_share }}% dos fretes retornados{% endif %}
+      </div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label">Frete cobrado</div>
+      <div class="stat-value" data-batch-paid>{{ summary.paid_count }}</div>
+      <div class="stat-foot" data-batch-paid-average>
+        {% if summary.paid_average_text %}média {{ summary.paid_average_text }}{% endif %}
+      </div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label">Sem retorno</div>
+      <div class="stat-value stat-value-warn" data-batch-unknown>{{ summary.unknown_count }}</div>
+      <div class="stat-foot">a página não devolveu valor</div>
+    </div>
+    <div class="stat-tile {% if summary.error_count %}stat-tile-error{% endif %}" data-batch-error-tile>
+      <div class="stat-label">Erros</div>
+      <div class="stat-value stat-value-error" data-batch-error-count>{{ summary.error_count }}</div>
+      <div class="stat-foot">
+        {% if summary.error_count %}<a class="link" href="#" data-filter-shortcut="error">ver só as falhas</a>{% else %}nenhuma falha{% endif %}
+      </div>
     </div>
   </section>
 
   <section class="card">
-    <h2>Execucoes do lote</h2>
-    <div class="table">
+    <div class="table-toolbar">
+      <div class="segmented" data-batch-filters>
+        <button type="button" class="segmented-option is-active" data-filter="all">Todas <span data-count="all">{{ summary.total }}</span></button>
+        <button type="button" class="segmented-option" data-filter="free">Grátis <span data-count="free">{{ summary.free_count }}</span></button>
+        <button type="button" class="segmented-option" data-filter="paid">Cobrado <span data-count="paid">{{ summary.paid_count }}</span></button>
+        <button type="button" class="segmented-option" data-filter="error">Erros <span data-count="error">{{ summary.error_count }}</span></button>
+        <button type="button" class="segmented-option" data-filter="pending">Pendentes <span data-count="pending">{{ summary.pending }}</span></button>
+      </div>
+      <input type="text" class="table-search" placeholder="Buscar produto, ID ou CEP..." data-batch-search aria-label="Buscar no lote" />
+    </div>
+
+    <div class="table" data-batch-table>
       <div class="tr th tr-batch">
-        <div>ID</div>
-        <div>Status</div>
-        <div>CEP</div>
-        <div>Grupo</div>
+        <div>Situação</div>
         <div>Produto</div>
+        <div>CEP</div>
+        <div>Frete</div>
+        <div>Prazo</div>
+        <div>Modalidade</div>
         <div>Abrir</div>
       </div>
-      {% for j in jobs %}
-        <div class="tr tr-batch">
-          <div class="mono">{{ j.id[:10] }}</div>
-          <div class="badge badge-{{ j.status|lower }}">{{ j.status|replace("_", " ") }}</div>
-          <div class="mono">{{ j.cep }}</div>
-          <div class="muted">{{ j.group or "-" }}</div>
-          <div class="muted">
-            {% if j.input_product_name %}{{ j.input_product_name }}{% endif %}
-            {% if j.product_id %}<span class="mono">({{ j.product_id }})</span>{% endif %}
-          </div>
-          <div><a class="link" href="{{ url_for('run_detail', job_id=j.id) }}">ver</a></div>
-        </div>
+      {% for row in rows %}
+        {% include "_batch_row.html" %}
       {% endfor %}
+    </div>
+
+    <div class="table-empty" data-batch-empty hidden>Nenhuma consulta corresponde ao filtro.</div>
+    <div class="hint" style="margin-top: 12px;" data-batch-count-note>
+      Mostrando <span data-batch-visible>{{ rows|length }}</span> de {{ summary.total }} consultas. A lista se atualiza sozinha, sem recarregar a página.
     </div>
   </section>
 {% endblock %}

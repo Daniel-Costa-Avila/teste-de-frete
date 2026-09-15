@@ -10,6 +10,7 @@ from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from app.infra.cep import normalize_cep
+from app.infra.overlay_dismisser import OverlayDismisser
 
 
 class ProbelProductPage:
@@ -41,14 +42,23 @@ class ProbelProductPage:
         "erro ao calcular",
     )
 
-    def __init__(self, driver: WebDriver, timeout: int = 25, slow_type_delay_ms: int = 90):
+    def __init__(
+        self,
+        driver: WebDriver,
+        timeout: int = 25,
+        slow_type_delay_ms: int = 90,
+        overlays: OverlayDismisser | None = None,
+    ):
         self.driver = driver
         self.wait = WebDriverWait(driver, timeout)
         self.slow_type_delay_ms = slow_type_delay_ms
+        self.overlays = overlays or OverlayDismisser(driver, enabled=False)
 
     def open(self, url: str) -> None:
         self.driver.get(url)
         self.wait.until(lambda d: self._read_product_name() is not None)
+        # Banners de cookie e modais de boas-vindas costumam chegar depois do load.
+        self.overlays.settle()
 
     def get_product_name(self) -> str:
         name = self.wait.until(lambda d: self._read_product_name())
@@ -106,9 +116,12 @@ class ProbelProductPage:
 
     def fill_cep(self, cep: str) -> None:
         cep = normalize_cep(cep)
+        # Um pop-up aberto pode conter o proprio campo de CEP e roubar a busca.
+        self.overlays.recheck()
         form, cep_input, _ = self._get_freight_form_elements()
         self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", cep_input)
         time.sleep(0.4)
+        self.overlays.clear_path(cep_input)
 
         cep_input.click()
         cep_input.send_keys(Keys.CONTROL, "a")
@@ -149,11 +162,17 @@ class ProbelProductPage:
         _, _, button = self._get_freight_form_elements()
         self.wait.until(lambda d: button.is_displayed() and button.is_enabled())
         time.sleep(0.5)
+        self.overlays.clear_path(button)
         try:
             button.click()
         except Exception:
-            # Some pages overlay elements or use custom handlers; fallback to JS click.
-            self.driver.execute_script("arguments[0].click();", button)
+            # Clique interceptado costuma ser pop-up que subiu agora: fecha e repete.
+            self.overlays.clear_path(button)
+            try:
+                button.click()
+            except Exception:
+                # Handlers customizados: ultimo recurso e o clique via script.
+                self.driver.execute_script("arguments[0].click();", button)
 
     def read_freight_result(self) -> dict:
         form, _, _ = self._get_freight_form_elements()

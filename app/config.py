@@ -62,6 +62,11 @@ class Settings:
     wait_timeout_seconds: int = field(default_factory=lambda: int(os.getenv("WAIT_TIMEOUT_SECONDS", "25")))
     slow_type_delay_ms: int = field(default_factory=lambda: int(os.getenv("SLOW_TYPE_DELAY_MS", "90")))
     enable_browser_fallback: bool = field(default_factory=lambda: _env_bool("ENABLE_BROWSER_FALLBACK", False))
+
+    # Fechamento automatico de pop-ups, modais e banners de cookie.
+    popup_handling: bool = field(default_factory=lambda: _env_bool("POPUP_HANDLING", True))
+    popup_settle_seconds: float = field(default_factory=lambda: float(os.getenv("POPUP_SETTLE_SECONDS", "2")))
+    popup_max_attempts: int = field(default_factory=lambda: max(1, int(os.getenv("POPUP_MAX_ATTEMPTS", "3"))))
     selenoid_fallback_enabled: bool = field(default_factory=lambda: _env_bool("SELENOID_FALLBACK_ENABLED", False))
     max_concurrent_jobs: int = field(
         default_factory=lambda: max(

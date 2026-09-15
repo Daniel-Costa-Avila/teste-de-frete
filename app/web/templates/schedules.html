@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+
+{% set nav_active = 'schedules' %}
+
+{% block title %}Agendamentos{% endblock %}
+
+{% block content %}
+  {% if notice %}
+    <div class="notice notice-{{ 'error' if notice_kind == 'error' else 'success' }}" data-notice>{{ notice }}</div>
+  {% endif %}
+
+  <section class="card">
+    <div class="section-head">
+      <h2>Agendamentos</h2>
+      <p>Pesquisas que rodam sozinhas no horário do servidor.</p>
+    </div>
+
+    {% if schedules %}
+      <div class="guide-grid">
+        {% for s in schedules %}
+          <div class="guide-step">
+            <div class="schedule-head">
+              <div class="guide-step-title" style="margin-bottom: 0;">{{ s.name }}</div>
+              <span class="badge badge-{{ 'success' if s.active else 'canceled' }}">{{ "ATIVO" if s.active else "PAUSADO" }}</span>
+            </div>
+
+            {% if s.active and s.next_run_label %}
+              <div class="muted" style="margin-top: 8px;">
+                Próxima execução: <strong>{{ s.next_run_label }}</strong>{% if s.next_run_in %} — daqui a {{ s.next_run_in }}{% endif %}
+              </div>
+            {% else %}
+              <div class="muted" style="margin-top: 8px;">Não roda enquanto estiver pausado.</div>
+            {% endif %}
+
+            <div class="muted" style="margin-top: 4px;">
+              {{ s.weekday_label }} às {{ "%02d"|format(s.hour) }}:{{ "%02d"|format(s.minute) }} ·
+              {{ "base completa" if s.run_mode == "full" else "seleção personalizada" }}
+              {% if s.run_mode != "full" %} ({{ s.product_ids|length }} produtos × {{ s.ceps|length }} CEPs){% endif %}
+            </div>
+
+            <div class="muted" style="margin-top: 4px;">
+              {% if s.last_run_label %}Última execução: {{ s.last_run_label }}{% else %}Nunca executado{% endif %}
+              {% if s.last_batch_id %}
+                — <a class="link" href="{{ url_for('batch_detail', batch_id=s.last_batch_id) }}">ver resultado</a>
+              {% endif %}
+            </div>
+
+            {% if s.last_error %}
+              <div class="hint" style="margin-top: 8px; color: var(--danger);">Último erro: {{ s.last_error }}</div>
+            {% endif %}
+
+            <div class="actions" style="margin-top: 12px;">
+              <form method="post" action="{{ url_for('schedule_toggle', schedule_id=s.id) }}">
+                <button class="btn btn-secondary btn-compact" type="submit" data-loading-label="Salvando…">{{ "Pausar" if s.active else "Ativar" }}</button>
+              </form>
+              <form method="post" action="{{ url_for('schedule_run_now', schedule_id=s.id) }}" data-confirm="Rodar &quot;{{ s.name }}&quot; agora?">
+                <button class="btn btn-secondary btn-compact" type="submit" data-loading-label="Disparando…">Rodar agora</button>
+              </form>
+              <form method="post" action="{{ url_for('schedule_delete', schedule_id=s.id) }}" data-confirm="Excluir o agendamento &quot;{{ s.name }}&quot;? Isso não pode ser desfeito.">
+                <button class="btn btn-secondary btn-compact btn-danger" type="submit" data-loading-label="Excluindo…">Excluir</button>
+              </form>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="hint">Nenhum agendamento cadastrado ainda.</div>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <div class="section-head">
+      <h2>Novo agendamento</h2>
+      <p>O horário usa o relógio local do servidor onde o sistema está rodando.</p>
+    </div>
+
+    {% if db_error %}
+      <div class="alert">Falha ao ler a base local: {{ db_error }}</div>
+    {% else %}
+      <form method="post" action="{{ url_for('schedule_create') }}" class="form">
+        <div class="guide-grid">
+          <label class="field">
+            <div class="label">Nome do agendamento</div>
+            <input name="schedule_name" type="text" placeholder="Ex.: Revisão semanal de frete" required />
+          </label>
+          <label class="field">
+            <div class="label">Modo</div>
+            <select name="schedule_mode">
+              <option value="full">Base completa</option>
+              <option value="selected">Seleção personalizada</option>
+            </select>
+          </label>
+          <label class="field">
+            <div class="label">Dia da semana</div>
+            <select name="schedule_weekday">
+              <option value="-1">Todos os dias</option>
+              <option value="0">Segunda-feira</option>
+              <option value="1">Terça-feira</option>
+              <option value="2">Quarta-feira</option>
+              <option value="3">Quinta-feira</option>
+              <option value="4">Sexta-feira</option>
+              <option value="5">Sábado</option>
+              <option value="6" selected>Domingo</option>
+            </select>
+          </label>
+          <label class="field">
+            <div class="label">Hora</div>
+            <input name="schedule_hour" type="number" min="0" max="23" value="18" required />
+          </label>
+          <label class="field">
+            <div class="label">Minuto</div>
+            <input name="schedule_minute" type="number" min="0" max="59" value="0" required />
+          </label>
+        </div>
+
+        <div class="picker-pair">
+          <label class="field">
+            <div class="label">Produtos (só no modo personalizado)</div>
+            <div class="picker" data-picker>
+              <div class="picker-toolbar">
+                <input type="text" class="picker-search" placeholder="Buscar produto..." data-picker-search />
+              </div>
+              <div class="picker-meta-row">
+                <span class="picker-meta"><span data-picker-count>0</span> selecionados</span>
+                <span class="picker-utility">
+                  <button class="btn-link" type="button" data-picker-select-all>Selecionar visíveis</button>
+                  <button class="btn-link" type="button" data-picker-clear>Limpar</button>
+                </span>
+              </div>
+              <div class="picker-list" data-picker-list>
+                {% for p in db_products_preview %}
+                  <label class="picker-item" data-picker-item data-picker-text="{{ (p.product_name or p.url)|lower }} {{ (p.product_id or '')|lower }} {{ (p.site or '')|lower }}">
+                    <input type="checkbox" name="schedule_product_ids" value="{{ p.id }}" data-picker-input />
+                    <span>{{ p.product_name or p.url }} {% if p.product_id %}<span class="mono muted">({{ p.product_id }})</span>{% endif %}{% if p.site %}<span class="picker-site">{{ p.site }}</span>{% endif %}</span>
+                  </label>
+                {% endfor %}
+              </div>
+            </div>
+          </label>
+
+          <label class="field">
+            <div class="label">CEPs (só no modo personalizado)</div>
+            <div class="picker" data-picker>
+              <div class="picker-toolbar">
+                <input type="text" class="picker-search" placeholder="Buscar CEP..." data-picker-search />
+              </div>
+              <div class="picker-meta-row">
+                <span class="picker-meta"><span data-picker-count>0</span> selecionados</span>
+                <span class="picker-utility">
+                  <button class="btn-link" type="button" data-picker-select-all>Selecionar visíveis</button>
+                  <button class="btn-link" type="button" data-picker-clear>Limpar</button>
+                </span>
+              </div>
+              <div class="picker-list picker-list-cep" data-picker-list>
+                {% for c in db_ceps_preview %}
+                  <label class="picker-item" data-picker-item data-picker-text="{{ c|lower }}">
+                    <input type="checkbox" name="schedule_ceps" value="{{ c }}" data-picker-input />
+                    <span class="mono">{{ c }}</span>
+                  </label>
+                {% endfor %}
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <div class="form-error" data-form-error hidden></div>
+
+        <div class="actions">
+          <button class="btn" type="submit" data-loading-label="Salvando…">Salvar agendamento</button>
+        </div>
+      </form>
+    {% endif %}
+  </section>
+{% endblock %}

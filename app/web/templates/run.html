@@ -1,103 +1,127 @@
 {% extends "base.html" %}
 
-{% block title %}Execução {{ job.id[:10] }}{% endblock %}
-
-{% block head %}
-  {% if auto_refresh %}
-    <meta http-equiv="refresh" content="2" />
-  {% endif %}
-{% endblock %}
+{% block title %}Execução {{ view.short_id }}{% endblock %}
 
 {% block content %}
-  <section class="card">
+  <section
+    class="card"
+    {% if live %}data-run-live data-run-url="{{ url_for('run_api', job_id=job.id) }}"{% endif %}
+  >
     <div class="run-head">
-      <h2>Execução</h2>
+      <div>
+        <div class="batch-title">
+          <h2 style="margin: 0;">Execução</h2>
+          <span class="badge badge-{{ view.status_group }}">{{ view.status_label }}</span>
+          {% if live %}
+            <span class="live-pill"><span class="live-dot"></span> Consultando…</span>
+          {% endif %}
+        </div>
+        {% if job.batch_id %}
+          <div class="batch-subtitle">
+            <a class="link mono" href="{{ url_for('batch_detail', batch_id=job.batch_id) }}">voltar ao lote {{ job.batch_id[:10] }}</a>
+          </div>
+        {% endif %}
+      </div>
       <div class="actions">
-        <div class="badge badge-{{ job.status|lower }}">{{ job.status|replace("_", " ") }}</div>
         {% if job.status in ["QUEUED", "RUNNING", "CANCEL_REQUESTED"] %}
-          <form method="post" action="{{ url_for('run_cancel', job_id=job.id) }}">
-            <button class="btn btn-secondary" type="submit">Cancelar</button>
+          <form method="post" action="{{ url_for('run_cancel', job_id=job.id) }}" data-confirm="Cancelar esta consulta?">
+            <button class="btn-link-danger" type="submit" data-loading-label="Cancelando…">Cancelar</button>
           </form>
         {% endif %}
       </div>
     </div>
 
+    {% if view.status_hint %}
+      <div class="{{ 'alert' if view.status_group == 'error' else 'notice notice-warning' }}" style="margin-top: 12px;">
+        {{ view.status_hint }}
+      </div>
+    {% endif %}
+
     <div class="kv">
-      <div class="k">ID</div><div class="v mono">{{ job.id }}</div>
-      {% if job.batch_id %}
-        <div class="k">Lote</div><div class="v"><a class="link mono" href="{{ url_for('batch_detail', batch_id=job.batch_id) }}">{{ job.batch_id[:10] }}</a></div>
-      {% endif %}
       {% if job.group %}
         <div class="k">Grupo</div><div class="v">{{ job.group }}</div>
       {% endif %}
       {% if job.input_product_name %}
-        <div class="k">Produto (entrada)</div><div class="v">{{ job.input_product_name }}</div>
+        <div class="k">Produto</div><div class="v">{{ job.input_product_name }}</div>
       {% endif %}
       {% if job.product_id %}
         <div class="k">Produto ID</div><div class="v mono">{{ job.product_id }}</div>
       {% endif %}
-      <div class="k">URL</div><div class="v"><a class="link" href="{{ job.url }}" target="_blank" rel="noreferrer">{{ job.url }}</a></div>
+      <div class="k">Link</div><div class="v"><a class="link" href="{{ job.url }}" target="_blank" rel="noreferrer">{{ job.url }}</a></div>
       <div class="k">CEP</div><div class="v mono">{{ job.cep }}</div>
-      <div class="k">Criado</div><div class="v mono">{{ job.created_at }}</div>
-      <div class="k">Início</div><div class="v mono">{{ job.started_at or "-" }}</div>
-      <div class="k">Fim</div><div class="v mono">{{ job.finished_at or "-" }}</div>
+      <div class="k">Início</div><div class="v mono">{{ view.started_label or "—" }}</div>
+      <div class="k">Fim</div><div class="v mono">{{ view.finished_label or "—" }}</div>
+      <div class="k">ID</div><div class="v mono">{{ job.id }}</div>
     </div>
-
-    {% if job.error %}
-      <div class="alert">{{ job.error }}</div>
-    {% endif %}
   </section>
 
   <section class="card">
     <h2>Resultado</h2>
-    {% if json_pretty %}
-      {% if job.result and job.result.freight %}
-        <div class="kv">
-          <div class="k">Frete</div><div class="v">{{ job.result.freight|format_freight_price }}</div>
-          <div class="k">Prazo</div><div class="v">{{ job.result.freight.delivery_time_text or "-" }}</div>
-          <div class="k">Modalidade</div><div class="v">{{ job.result.freight.delivery_mode or "-" }}</div>
+    {% if job.result and job.result.freight %}
+      <div class="result-grid">
+        <div class="result-tile">
+          <div class="stat-label">Frete</div>
+          <div class="stat-value freight freight-{{ view.freight_kind|lower }}">{{ view.freight_text }}</div>
         </div>
-        {% if job.result.freight.options and job.result.freight.options|length > 1 %}
-          <h3>Opções de frete</h3>
-          <div class="table">
-            <div class="tr th">
-              <div>Prazo</div>
-              <div>Modalidade</div>
-              <div>Preço</div>
-              <div>Tipo</div>
-              <div>Texto</div>
-            </div>
-            {% for option in job.result.freight.options %}
-              <div class="tr">
-                <div>{{ option.delivery_time_text or "-" }}</div>
-                <div>{{ option.delivery_mode or "-" }}</div>
-                <div>{{ option.price_text or (option.price if option.price is not none else "-") }}</div>
-                <div>{{ option.price_kind or "-" }}</div>
-                <div class="muted">{{ option.price_text or "-" }}</div>
-              </div>
-            {% endfor %}
+        <div class="result-tile">
+          <div class="stat-label">Prazo</div>
+          <div class="result-value">{{ view.delivery_time or "—" }}</div>
+        </div>
+        <div class="result-tile">
+          <div class="stat-label">Modalidade</div>
+          <div class="result-value">{{ view.delivery_mode or "—" }}</div>
+        </div>
+      </div>
+
+      {% if job.result.freight.options and job.result.freight.options|length > 1 %}
+        <h3 style="margin-top: 20px;">Outras opções de frete</h3>
+        <div class="table">
+          <div class="tr th tr-freight">
+            <div>Prazo</div>
+            <div>Modalidade</div>
+            <div>Preço</div>
+            <div>Tipo</div>
+            <div>Texto na página</div>
           </div>
-        {% endif %}
+          {% for option in job.result.freight.options %}
+            <div class="tr tr-freight">
+              <div data-label="Prazo">{{ option.delivery_time_text or "—" }}</div>
+              <div data-label="Modalidade">{{ option.delivery_mode or "—" }}</div>
+              <div data-label="Preço">{{ option.price_text or (option.price if option.price is not none else "—") }}</div>
+              <div data-label="Tipo">{{ option.price_kind or "—" }}</div>
+              <div class="muted" data-label="Texto">{{ option.price_text or "—" }}</div>
+            </div>
+          {% endfor %}
+        </div>
       {% endif %}
-      <div class="actions">
-        <a class="link" href="{{ url_for('run_api', job_id=job.id) }}" target="_blank" rel="noreferrer">ver JSON</a>
-        <a class="link" href="{{ url_for('run_results_xlsx', job_id=job.id) }}">baixar XLSX</a>
-        {% if screenshot_url %}
-          <a class="link" href="{{ screenshot_url }}" target="_blank" rel="noreferrer">screenshot</a>
-        {% endif %}
-        {% if html_url %}
-          <a class="link" href="{{ html_url }}" target="_blank" rel="noreferrer">html</a>
-        {% endif %}
-      </div>
-      <pre class="code">{{ json_pretty }}</pre>
+    {% elif live %}
+      <div class="muted">Consultando a página do produto. Esta tela se atualiza sozinha quando terminar.</div>
     {% else %}
-      <div class="muted">
-        {% if auto_refresh %}
-          Rodando... esta página atualiza automaticamente.
-        {% else %}
-          Sem resultado.
-        {% endif %}
-      </div>
+      <div class="muted">Sem resultado de frete para esta consulta.</div>
+    {% endif %}
+
+    {% if job.error and view.status_group == 'error' %}
+      <div class="alert" style="margin-top: 14px;">{{ job.error }}</div>
+    {% endif %}
+
+    <div class="actions" style="margin-top: 16px;">
+      <a class="btn" href="{{ url_for('run_results_xlsx', job_id=job.id) }}">Baixar XLSX</a>
+      {% if screenshot_url %}
+        <a class="link" href="{{ screenshot_url }}" target="_blank" rel="noreferrer">Ver screenshot</a>
+      {% endif %}
+      {% if html_url %}
+        <a class="link" href="{{ html_url }}" target="_blank" rel="noreferrer">Ver HTML capturado</a>
+      {% endif %}
+    </div>
+
+    {% if json_pretty %}
+      <details class="tech-details">
+        <summary>Ver dados técnicos</summary>
+        <div class="actions" style="margin: 10px 0;">
+          <a class="link" href="{{ url_for('run_api', job_id=job.id) }}" target="_blank" rel="noreferrer">Abrir JSON em outra aba</a>
+        </div>
+        <pre class="code">{{ json_pretty }}</pre>
+      </details>
     {% endif %}
   </section>
 
@@ -105,7 +129,7 @@
     <section class="card">
       <h2>Screenshot</h2>
       <div class="img-wrap">
-        <img src="{{ screenshot_url }}" alt="screenshot" />
+        <img src="{{ screenshot_url }}" alt="Captura de tela da página do produto" />
       </div>
     </section>
   {% endif %}

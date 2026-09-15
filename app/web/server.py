@@ -10,7 +10,7 @@ from queue import Empty, Queue
 import threading
 import uuid
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
 from pathlib import Path
@@ -38,13 +38,312 @@ _SCHEDULER_LEADER_CONN: sqlite3.Connection | None = None
 _WEEKDAY_LABELS = {
     -1: "Todos os dias",
     0: "Segunda-feira",
-    1: "Terca-feira",
+    1: "Terça-feira",
     2: "Quarta-feira",
     3: "Quinta-feira",
     4: "Sexta-feira",
-    5: "Sabado",
+    5: "Sábado",
     6: "Domingo",
 }
+
+# Cada status tecnico vira (grupo, rotulo curto, o que fazer).
+# O grupo define a cor da etiqueta e os filtros da tela de lote.
+_STATUS_VIEW: dict[str, tuple[str, str, str]] = {
+    "QUEUED": ("queued", "NA FILA", ""),
+    "RUNNING": ("running", "EM EXECUÇÃO", ""),
+    "CANCEL_REQUESTED": ("running", "CANCELANDO", "Aguardando o navegador encerrar."),
+    "CANCELED": ("canceled", "CANCELADA", "Cancelada manualmente."),
+    "SUCCESS": ("success", "CONCLUÍDA", ""),
+    "FREIGHT_NOT_RETURNED": (
+        "warning",
+        "SEM RETORNO",
+        "A página abriu, mas não devolveu valor de frete para este CEP.",
+    ),
+    "CEP_FIELD_VALUE_MISMATCH": (
+        "warning",
+        "CEP NÃO ACEITO",
+        "O site não manteve o CEP informado. Confira se a região é atendida.",
+    ),
+    "ERRO_NO_LINK": (
+        "error",
+        "LINK INVÁLIDO",
+        "A página do produto não abriu. Confira se o link ainda é válido.",
+    ),
+    "BLOCKED": (
+        "error",
+        "BLOQUEADO",
+        "O site bloqueou a automação. Tente novamente mais tarde.",
+    ),
+    "CEP_FIELD_NOT_FOUND": (
+        "error",
+        "SEM CAMPO DE CEP",
+        "O campo de CEP não foi localizado na página do produto.",
+    ),
+    "FREIGHT_BUTTON_NOT_FOUND": (
+        "error",
+        "SEM BOTÃO DE FRETE",
+        "O botão de calcular frete não foi localizado. Confira se o link abre o produto.",
+    ),
+    "TIMEOUT": ("error", "TEMPO ESGOTADO", "A página demorou demais para responder."),
+    "BROWSER_DISCONNECTED": ("error", "NAVEGADOR CAIU", "O navegador encerrou durante a consulta."),
+    "ERROR": ("error", "ERRO", "Falha inesperada durante a consulta."),
+}
+
+_BATCH_STATUS_LABELS = {
+    "RUNNING": "EM EXECUÇÃO",
+    "ERROR": "ERRO",
+    "PARTIAL_SUCCESS": "PARCIAL",
+    "CANCELED": "CANCELADO",
+    "DONE": "CONCLUÍDO",
+}
+
+
+def _status_view(status: Any) -> tuple[str, str, str]:
+    key = str(status or "").upper()
+    if key in _STATUS_VIEW:
+        return _STATUS_VIEW[key]
+    return ("error", key.replace("_", " ") or "DESCONHECIDO", "")
+
+
+def _format_money(amount: float, currency: str = "BRL") -> str:
+    currency = (currency or "BRL").upper()
+    if currency == "BRL":
+        # 1234.5 -> R$ 1.234,50
+        s = f"{amount:,.2f}"
+        s = s.replace(",", "X").replace(".", ",").replace("X", ".")
+        return f"R$ {s}"
+    return f"{currency} {amount:.2f}"
+
+
+def _freight_view(job: dict[str, Any]) -> dict[str, Any]:
+    """Extrai o frete de um job no formato que a tela e a API usam."""
+    result = job.get("result")
+    freight = result.get("freight") if isinstance(result, dict) else None
+    empty = {"kind": "NONE", "text": "—", "price": None, "delivery_time": "", "delivery_mode": ""}
+    if not isinstance(freight, dict):
+        return empty
+
+    kind = str(freight.get("price_kind") or "").upper()
+    price = freight.get("price")
+    delivery_time = str(freight.get("delivery_time_text") or "")
+    delivery_mode = str(freight.get("delivery_mode") or "")
+
+    if kind == "FREE" or price == 0 or price == 0.0:
+        return {
+            "kind": "FREE",
+            "text": "Grátis",
+            "price": 0.0,
+            "delivery_time": delivery_time,
+            "delivery_mode": delivery_mode,
+        }
+    if price is None:
+        return {
+            "kind": "UNKNOWN",
+            "text": str(freight.get("price_text") or "Não informado"),
+            "price": None,
+            "delivery_time": delivery_time,
+            "delivery_mode": delivery_mode,
+        }
+    try:
+        value = float(price)
+    except Exception:
+        return {
+            "kind": "UNKNOWN",
+            "text": str(freight.get("price_text") or price),
+            "price": None,
+            "delivery_time": delivery_time,
+            "delivery_mode": delivery_mode,
+        }
+    return {
+        "kind": "PAID",
+        "text": _format_money(value, str(freight.get("currency") or "BRL")),
+        "price": value,
+        "delivery_time": delivery_time,
+        "delivery_mode": delivery_mode,
+    }
+
+
+def _parse_iso(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except Exception:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _humanize_seconds(seconds: float | None) -> str:
+    if seconds is None or seconds <= 0:
+        return ""
+    total = int(round(seconds))
+    if total < 60:
+        return "menos de 1 min"
+    minutes = total // 60
+    if minutes < 60:
+        return f"{minutes} min"
+    hours = minutes // 60
+    rest = minutes % 60
+    if rest == 0:
+        return f"{hours} h"
+    return f"{hours} h {rest} min"
+
+
+def _job_view(job: dict[str, Any]) -> dict[str, Any]:
+    """Uma linha da tabela de lote, ja pronta para a tela e para a API."""
+    job_id = str(job.get("id") or "")
+    status = str(job.get("status") or "").upper()
+    group_key, label, hint = _status_view(status)
+    freight = _freight_view(job)
+    product_name = str(job.get("input_product_name") or "")
+    product_id = str(job.get("product_id") or "")
+    url = str(job.get("url") or "")
+    cep = str(job.get("cep") or "")
+    error = str(job.get("error") or "")
+
+    return {
+        "id": job_id,
+        "short_id": job_id[:10],
+        "status": status,
+        "status_group": group_key,
+        "status_label": label,
+        "status_hint": hint,
+        "cep": cep,
+        "group": str(job.get("group") or ""),
+        "product_name": product_name or url,
+        "product_id": product_id,
+        "site": _host_de(url),
+        "url": url,
+        "freight_kind": freight["kind"],
+        "freight_text": freight["text"],
+        "delivery_time": freight["delivery_time"],
+        "delivery_mode": freight["delivery_mode"],
+        "error": error,
+        "started_label": _format_created_label(job.get("started_at"), with_seconds=True),
+        "finished_label": _format_created_label(job.get("finished_at"), with_seconds=True),
+        "detail_url": url_for("run_detail", job_id=job_id) if job_id else "",
+        "search": " ".join([product_name, product_id, cep, url, label, _host_de(url)]).lower(),
+    }
+
+
+def _batch_summary(jobs: list[dict[str, Any]]) -> dict[str, Any]:
+    """Contagens, percentual e estimativa de termino de um lote."""
+    total = len(jobs)
+    counts = {"queued": 0, "running": 0, "success": 0, "warning": 0, "error": 0, "canceled": 0}
+    free_count = 0
+    paid_count = 0
+    unknown_count = 0
+    paid_sum = 0.0
+    first_start: datetime | None = None
+
+    for job in jobs:
+        group_key, _, _ = _status_view(job.get("status"))
+        counts[group_key] = counts.get(group_key, 0) + 1
+
+        started = _parse_iso(job.get("started_at"))
+        if started and (first_start is None or started < first_start):
+            first_start = started
+
+        freight = _freight_view(job)
+        if freight["kind"] == "FREE":
+            free_count += 1
+        elif freight["kind"] == "PAID":
+            paid_count += 1
+            paid_sum += float(freight["price"] or 0.0)
+        elif group_key in {"success", "warning"}:
+            unknown_count += 1
+
+    pending = counts["queued"] + counts["running"]
+    done = total - pending
+    percent = int(round(done * 100 / total)) if total else 0
+
+    eta_seconds: float | None = None
+    if first_start and done > 0 and pending > 0:
+        elapsed = (datetime.now(timezone.utc) - first_start).total_seconds()
+        if elapsed > 0:
+            eta_seconds = (elapsed / done) * pending
+
+    if pending > 0:
+        status = "RUNNING"
+    elif total and counts["canceled"] == total:
+        status = "CANCELED"
+    elif counts["success"] + counts["warning"] == 0:
+        # Nenhuma consulta chegou a abrir a pagina do produto.
+        status = "ERROR"
+    elif counts["error"] + counts["canceled"] + counts["warning"] > 0:
+        status = "PARTIAL_SUCCESS"
+    else:
+        status = "DONE"
+
+    return {
+        "total": total,
+        "done": done,
+        "pending": pending,
+        "percent": percent,
+        "queued_count": counts["queued"],
+        "running_count": counts["running"],
+        "success_count": counts["success"],
+        "warning_count": counts["warning"],
+        "error_count": counts["error"],
+        "canceled_count": counts["canceled"],
+        "free_count": free_count,
+        "paid_count": paid_count,
+        "unknown_count": unknown_count,
+        "paid_average_text": _format_money(paid_sum / paid_count) if paid_count else "",
+        "free_share": int(round(free_count * 100 / (free_count + paid_count))) if (free_count + paid_count) else 0,
+        "eta_seconds": eta_seconds,
+        "eta_text": _humanize_seconds(eta_seconds),
+        "running": pending > 0,
+        "status": status,
+        "status_label": _BATCH_STATUS_LABELS.get(status, status),
+    }
+
+
+def _next_run_at(schedule: dict[str, Any]) -> datetime | None:
+    """Proxima vez que um agendamento ativo vai disparar, no fuso local do servidor."""
+    if not schedule.get("active"):
+        return None
+    try:
+        hour = int(schedule.get("hour") or 0)
+        minute = int(schedule.get("minute") or 0)
+        weekday = int(schedule.get("weekday") if schedule.get("weekday") is not None else -1)
+    except Exception:
+        return None
+
+    now = _local_now()
+    candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    for _ in range(8):
+        if candidate > now and (weekday < 0 or candidate.weekday() == weekday):
+            return candidate
+        candidate = candidate + timedelta(days=1)
+    return None
+
+
+def _with_next_run(schedules: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for schedule in schedules:
+        row = dict(schedule)
+        next_run = _next_run_at(schedule)
+        if next_run:
+            weekday_name = _WEEKDAY_LABELS.get(next_run.weekday(), "")
+            row["next_run_label"] = f"{weekday_name.lower()}, {next_run:%H:%M}"
+            delta = (next_run - _local_now()).total_seconds()
+            row["next_run_in"] = _humanize_seconds(delta)
+        else:
+            row["next_run_label"] = ""
+            row["next_run_in"] = ""
+        row["last_run_label"] = _format_created_label(schedule.get("last_run_at"))
+        out.append(row)
+    return out
+
+
+def _estimate_seconds_for_jobs(total_jobs: int, parallel: int) -> float:
+    """Estimativa grosseira usada antes de o lote comecar (30 s por consulta)."""
+    total_jobs = max(0, int(total_jobs or 0))
+    parallel = max(1, int(parallel or 1))
+    return (total_jobs / parallel) * 30.0
 
 def _load_env_file(path: str = ".env") -> None:
     if not os.path.exists(path):
@@ -162,11 +461,15 @@ def _ensure_base_db(path: str) -> None:
                 regiao TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
+            -- product_id NAO e unico de proposito: o mesmo produto costuma
+            -- existir em varias lojas, e cada loja e uma linha. Quem identifica
+            -- a linha e a url.
             CREATE TABLE IF NOT EXISTS products (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 group_name TEXT,
                 product_name TEXT,
-                product_id TEXT UNIQUE,
+                product_id TEXT,
+                site TEXT,
                 url TEXT NOT NULL UNIQUE,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
@@ -207,6 +510,97 @@ def _ensure_base_db(path: str) -> None:
     finally:
         conn.close()
 
+    _migrar_produtos_multiloja(path)
+
+
+def _host_de(url: str) -> str:
+    """dominio da loja, sem www — usado para diferenciar o mesmo produto."""
+    host = (urlparse(str(url or "")).netloc or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    return host
+
+
+def _product_id_ainda_e_unico(conn: sqlite3.Connection) -> bool:
+    for row in conn.execute("PRAGMA index_list(products)").fetchall():
+        # (seq, name, unique, origin, partial)
+        if not row[2]:
+            continue
+        nome = str(row[1]).replace('"', '""')
+        colunas = [r[2] for r in conn.execute(f'PRAGMA index_info("{nome}")').fetchall()]
+        if colunas == ["product_id"]:
+            return True
+    return False
+
+
+def _migrar_produtos_multiloja(path: str) -> None:
+    """Libera o mesmo product_id em lojas diferentes e grava a loja de cada linha.
+
+    A base antiga tinha UNIQUE em products.product_id, o que impedia cadastrar
+    o mesmo produto em mais de um site. Aqui a tabela e reconstruida sem essa
+    restricao (SQLite nao remove constraint no lugar) e ganha a coluna `site`.
+    """
+    conn = sqlite3.connect(path)
+    try:
+        colunas = {row[1] for row in conn.execute("PRAGMA table_info(products)").fetchall()}
+        if not colunas:
+            return
+        precisa_rebuild = _product_id_ainda_e_unico(conn)
+        precisa_site = "site" not in colunas
+        if not precisa_rebuild and not precisa_site:
+            return
+
+        if precisa_rebuild:
+            # Reconstruir tabela mexe em dados: guarda uma copia antes.
+            backup = f"{path}.before-multiloja-{datetime.now():%Y%m%d-%H%M%S}.bak"
+            try:
+                conn.execute("VACUUM INTO ?", (backup,))
+            except Exception:
+                # VACUUM INTO exige SQLite 3.27+; sem ele, copia o arquivo.
+                import shutil
+
+                shutil.copy2(path, backup)
+
+            # As FKs precisam ficar desligadas durante o DROP, senao o
+            # product_ceps seria apagado em cascata junto com a tabela antiga.
+            conn.execute("PRAGMA foreign_keys = OFF")
+            conn.executescript(
+                """
+                BEGIN;
+                CREATE TABLE products_novo (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    group_name TEXT,
+                    product_name TEXT,
+                    product_id TEXT,
+                    site TEXT,
+                    url TEXT NOT NULL UNIQUE,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+                INSERT INTO products_novo (id, group_name, product_name, product_id, url, created_at)
+                    SELECT id, group_name, product_name, product_id, url, created_at FROM products;
+                DROP TABLE products;
+                ALTER TABLE products_novo RENAME TO products;
+                CREATE INDEX IF NOT EXISTS idx_products_group_name ON products(group_name);
+                COMMIT;
+                """
+            )
+            conn.execute("PRAGMA foreign_keys = ON")
+            quebradas = conn.execute("PRAGMA foreign_key_check").fetchall()
+            if quebradas:
+                raise RuntimeError(f"Migracao deixou vinculos invalidos: {quebradas[:3]}")
+        elif precisa_site:
+            conn.execute("ALTER TABLE products ADD COLUMN site TEXT")
+
+        # Preenche a loja das linhas que ainda nao tem.
+        pendentes = conn.execute(
+            "SELECT id, url FROM products WHERE site IS NULL OR TRIM(site) = ''"
+        ).fetchall()
+        for row_id, url in pendentes:
+            conn.execute("UPDATE products SET site = ? WHERE id = ?", (_host_de(url), row_id))
+        conn.commit()
+    finally:
+        conn.close()
+
 
 def _extract_ceps(raw_text: str) -> list[str]:
     out: list[str] = []
@@ -234,6 +628,7 @@ def _load_products_and_ceps_from_db(path: str) -> tuple[list[dict[str, Any]], li
                 COALESCE(group_name, '') AS group_name,
                 COALESCE(product_name, '') AS product_name,
                 COALESCE(product_id, '') AS product_id,
+                COALESCE(site, '') AS site,
                 url
             FROM products
             WHERE url IS NOT NULL AND TRIM(url) <> ''
@@ -257,6 +652,7 @@ def _load_products_and_ceps_from_db(path: str) -> tuple[list[dict[str, Any]], li
             "group": (r["group_name"] or "").strip() or None,
             "product_name": (r["product_name"] or "").strip() or None,
             "product_id": (r["product_id"] or "").strip() or None,
+            "site": (r["site"] or "").strip() or _host_de(r["url"]),
             "url": (r["url"] or "").strip(),
         }
         for r in products_rows
@@ -329,14 +725,26 @@ def _load_schedules_from_db(path: str) -> list[dict[str, Any]]:
     return out
 
 
+def _format_created_label(created_at: Any, with_seconds: bool = False) -> str:
+    """26/08 · 14:32 no fuso local do servidor."""
+    parsed = _parse_iso(created_at)
+    if not parsed:
+        return ""
+    if with_seconds:
+        return f"{parsed.astimezone():%d/%m/%Y · %H:%M:%S}"
+    return f"{parsed.astimezone():%d/%m · %H:%M}"
+
+
 def _recent_batches_with_flags(store: "JobStore", limit: int = 20) -> list[dict[str, Any]]:
-    recent = store.list_recent_batches(limit=limit)
+    """Lotes recentes ja com o resumo do que foi encontrado em cada um."""
     out: list[dict[str, Any]] = []
-    for b in recent:
-        running = (b.get("running_count") or 0) + (b.get("queued_count") or 0) > 0
-        status = "RUNNING" if running else ("ERROR" if (b.get("error_count") or 0) > 0 else "DONE")
-        row = dict(b)
-        row["status"] = status
+    for batch_id, created_at, jobs in store.list_recent_batches_with_jobs(limit=limit):
+        row = dict(_batch_summary(jobs))
+        row["batch_id"] = batch_id
+        row["short_id"] = batch_id[:10]
+        row["created_at"] = created_at
+        row["created_label"] = _format_created_label(created_at)
+        row["total_jobs"] = row["total"]
         out.append(row)
     return out
 
@@ -447,6 +855,7 @@ class JobStore:
                     "running_count": 0,
                     "queued_count": 0,
                     "error_count": 0,
+                    "success_count": 0,
                     "last_status": job.get("status"),
                 }
                 batches[batch_id] = b
@@ -465,10 +874,38 @@ class JobStore:
                 b["error_count"] += 1
             else:
                 b["done_count"] += 1
+                if status == "SUCCESS":
+                    b["success_count"] += 1
 
         recent = list(batches.values())
         recent.sort(key=lambda b: b.get("created_at") or "", reverse=True)
         return recent[:limit]
+
+    def list_recent_batches_with_jobs(
+        self, limit: int = 10
+    ) -> list[tuple[str, str, list[dict[str, Any]]]]:
+        """Agrupa os jobs por lote em uma unica passada, do mais recente ao mais antigo."""
+        limit = max(1, int(limit or 10))
+        with self._lock:
+            jobs = [dict(j) for j in self._jobs.values()]
+
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        created: dict[str, str] = {}
+        for job in jobs:
+            batch_id = job.get("batch_id")
+            if not batch_id:
+                continue
+            grouped.setdefault(batch_id, []).append(job)
+            created_at = job.get("created_at") or ""
+            current = created.get(batch_id)
+            if created_at and (not current or created_at < current):
+                created[batch_id] = created_at
+
+        for batch_jobs in grouped.values():
+            batch_jobs.sort(key=lambda j: j.get("created_at") or "")
+
+        ordered = sorted(grouped.items(), key=lambda item: created.get(item[0]) or "", reverse=True)
+        return [(batch_id, created.get(batch_id) or "", batch_jobs) for batch_id, batch_jobs in ordered[:limit]]
 
 
 class BatchProgressStore:
@@ -999,31 +1436,18 @@ def create_app() -> Flask:
                 app.logger.info("Agendador automatico ja esta ativo em outro processo.")
             _SCHEDULER_BOOTED = True
 
-    def _format_money(amount: float, currency: str) -> str:
-        currency = (currency or "BRL").upper()
-        if currency == "BRL":
-            # 1234.5 -> R$ 1.234,50
-            s = f"{amount:,.2f}"
-            s = s.replace(",", "X").replace(".", ",").replace("X", ".")
-            return f"R$ {s}"
-        return f"{currency} {amount:.2f}"
+    @app.template_filter("milhar")
+    def milhar(value: Any) -> str:
+        try:
+            return f"{int(value):,}".replace(",", ".")
+        except Exception:
+            return str(value)
 
     @app.template_filter("format_freight_price")
     def format_freight_price(freight: Any) -> str:
         if not isinstance(freight, dict):
-            return "-"
-        kind = str(freight.get("price_kind") or "").upper()
-        price = freight.get("price")
-        currency = str(freight.get("currency") or "BRL")
-
-        if kind == "FREE" or price == 0 or price == 0.0:
-            return "Grátis"
-        if price is None:
-            return str(freight.get("price_text") or "-")
-        try:
-            return _format_money(float(price), currency)
-        except Exception:
-            return str(freight.get("price_text") or price)
+            return "—"
+        return _freight_view({"result": {"freight": freight}})["text"]
 
     @app.template_filter("weekday_label")
     def weekday_label(value: Any) -> str:
@@ -1042,17 +1466,11 @@ def create_app() -> Flask:
         if last_batch_id:
             jobs = store.list_by_batch(last_batch_id)
             if jobs:
-                done_count = sum(1 for j in jobs if j["status"] in {"DONE", "ERROR"})
-                running_count = sum(1 for j in jobs if j["status"] == "RUNNING")
-                queued_count = sum(1 for j in jobs if j["status"] == "QUEUED")
-                running = any(j["status"] in {"QUEUED", "RUNNING"} for j in jobs)
-                last_batch = {
-                    "batch_id": last_batch_id,
-                    "running": running,
-                    "done_count": done_count,
-                    "running_count": running_count,
-                    "queued_count": queued_count,
-                }
+                last_batch = dict(_batch_summary(jobs))
+                last_batch["batch_id"] = last_batch_id
+                last_batch["created_label"] = _format_created_label(
+                    min((j.get("created_at") or "") for j in jobs)
+                )
         db_products_count = 0
         db_ceps_count = 0
         db_total_jobs = 0
@@ -1065,7 +1483,7 @@ def create_app() -> Flask:
         try:
             _ensure_base_db(_db_path())
             db_products, db_ceps = _load_products_and_ceps_from_db(_db_path())
-            schedules = _load_schedules_from_db(_db_path())
+            schedules = _with_next_run(_load_schedules_from_db(_db_path()))
             db_products_count = len(db_products)
             db_ceps_count = len(db_ceps)
             db_total_jobs = db_products_count * db_ceps_count
@@ -1073,6 +1491,9 @@ def create_app() -> Flask:
             db_ceps_preview = db_ceps[:500]
         except Exception as exc:
             db_error = str(exc)
+
+        db_parallel = max(1, int(getattr(app_settings, "db_parallel_limit", 1) or 1))
+        next_schedule = next((s for s in schedules if s.get("next_run_label")), None)
 
         return render_template(
             "index.html",
@@ -1083,10 +1504,15 @@ def create_app() -> Flask:
             db_products_count=db_products_count,
             db_ceps_count=db_ceps_count,
             db_total_jobs=db_total_jobs,
+            db_total_eta=_humanize_seconds(_estimate_seconds_for_jobs(db_total_jobs, db_parallel)),
+            db_parallel=db_parallel,
             db_max_jobs=app_settings.max_db_jobs,
             db_products_preview=db_products_preview,
             db_ceps_preview=db_ceps_preview,
+            db_products_truncated=max(0, db_products_count - len(db_products_preview)),
+            db_ceps_truncated=max(0, db_ceps_count - len(db_ceps_preview)),
             schedules=schedules,
+            next_schedule=next_schedule,
             db_error=db_error,
             db_notice=db_notice,
             schedule_notice=schedule_notice,
@@ -1095,6 +1521,64 @@ def create_app() -> Flask:
     @app.get("/manual")
     def manual():
         return render_template("manual.html")
+
+    def _aviso_base(mensagem: str, *, kind: str = "success"):
+        """Volta para a tela da base com um aviso legivel.
+
+        Erro de cadastro e coisa do dia a dia (ID repetido, CEP mal colado) e
+        precisa virar mensagem na tela, nunca pagina de erro do servidor.
+        """
+        return redirect(url_for("base_manage", db_notice=mensagem, kind=kind))
+
+    @app.get("/base")
+    def base_manage():
+        """Cadastro da base salva, fora da home para nao competir com a acao principal."""
+        db_products: list[dict[str, Any]] = []
+        db_ceps: list[str] = []
+        db_error: str | None = None
+        try:
+            _ensure_base_db(_db_path())
+            db_products, db_ceps = _load_products_and_ceps_from_db(_db_path())
+        except Exception as exc:
+            db_error = str(exc)
+
+        return render_template(
+            "db_base.html",
+            db_products=db_products[:500],
+            db_ceps=db_ceps[:500],
+            db_products_count=len(db_products),
+            db_ceps_count=len(db_ceps),
+            db_products_truncated=max(0, len(db_products) - 500),
+            db_ceps_truncated=max(0, len(db_ceps) - 500),
+            db_error=db_error,
+            notice=(request.args.get("db_notice") or "").strip(),
+            notice_kind=(request.args.get("kind") or "success").strip(),
+        )
+
+    @app.get("/agendamentos")
+    def schedules_page():
+        db_products_preview: list[dict[str, Any]] = []
+        db_ceps_preview: list[str] = []
+        schedules: list[dict[str, Any]] = []
+        db_error: str | None = None
+        try:
+            _ensure_base_db(_db_path())
+            db_products, db_ceps = _load_products_and_ceps_from_db(_db_path())
+            db_products_preview = db_products[:500]
+            db_ceps_preview = db_ceps[:500]
+            schedules = _with_next_run(_load_schedules_from_db(_db_path()))
+        except Exception as exc:
+            db_error = str(exc)
+
+        return render_template(
+            "schedules.html",
+            schedules=schedules,
+            db_products_preview=db_products_preview,
+            db_ceps_preview=db_ceps_preview,
+            db_error=db_error,
+            notice=(request.args.get("schedule_notice") or "").strip(),
+            notice_kind=(request.args.get("kind") or "success").strip(),
+        )
 
     @app.post("/run")
     def run_test():
@@ -1354,7 +1838,11 @@ def create_app() -> Flask:
         raw = (request.form.get("ceps_text") or "").strip()
         ceps = _extract_ceps(raw)
         if not ceps:
-            abort(400, "Informe ao menos um CEP valido para cadastrar.")
+            return _aviso_base(
+                "Nenhum CEP válido encontrado. Use o formato 00000-000, separando por vírgula, "
+                "espaço ou quebra de linha.",
+                kind="error",
+            )
 
         path = _db_path()
         _ensure_base_db(path)
@@ -1369,10 +1857,23 @@ def create_app() -> Flask:
                 if cur.rowcount:
                     inserted += 1
             conn.commit()
+        except sqlite3.Error as exc:
+            conn.rollback()
+            app.logger.exception("Falha ao cadastrar CEPs")
+            return _aviso_base(f"Não foi possível salvar os CEPs: {exc}", kind="error")
         finally:
             conn.close()
 
-        return redirect(url_for("index", _anchor="db-manage", db_notice=f"CEPs processados: {len(ceps)} | novos: {inserted}"))
+        repetidos = len(ceps) - inserted
+        if inserted == 0:
+            msg = "Nenhum CEP novo: todos já estavam na base."
+        elif inserted == 1:
+            msg = "1 CEP novo cadastrado."
+        else:
+            msg = f"{inserted} CEPs novos cadastrados."
+        if repetidos and inserted:
+            msg += f" Outros {repetidos} já estavam na base." if repetidos > 1 else " Outro 1 já estava na base."
+        return _aviso_base(msg)
 
     @app.post("/db/add-product")
     def db_add_product():
@@ -1383,25 +1884,50 @@ def create_app() -> Flask:
         ceps_raw = (request.form.get("ceps_for_product") or "").strip()
 
         if not url or not url.startswith(("http://", "https://")):
-            abort(400, "Informe um link valido (http/https).")
+            return _aviso_base(
+                "Informe um link válido, começando com http:// ou https://.", kind="error"
+            )
 
         ceps = _extract_ceps(ceps_raw)
         path = _db_path()
         _ensure_base_db(path)
         conn = sqlite3.connect(path)
         try:
-            conn.execute(
-                """
-                INSERT INTO products (group_name, product_name, product_id, url)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(url) DO UPDATE SET
-                    group_name=excluded.group_name,
-                    product_name=excluded.product_name,
-                    product_id=COALESCE(excluded.product_id, products.product_id)
-                """,
-                (group_name, product_name, product_id, url),
-            )
-            product_db_id = conn.execute("SELECT id FROM products WHERE url = ?", (url,)).fetchone()[0]
+            # Quem identifica a linha e a url: o mesmo produto pode estar em
+            # varias lojas, e cada loja e um cadastro proprio.
+            site = _host_de(url)
+            por_url = conn.execute("SELECT id FROM products WHERE url = ?", (url,)).fetchone()
+
+            if por_url:
+                product_db_id = por_url[0]
+                conn.execute(
+                    """
+                    UPDATE products
+                       SET group_name = ?, product_name = ?, site = ?,
+                           product_id = COALESCE(?, product_id)
+                     WHERE id = ?
+                    """,
+                    (group_name, product_name, site, product_id, product_db_id),
+                )
+                acao = "atualizado"
+            else:
+                cur = conn.execute(
+                    """
+                    INSERT INTO products (group_name, product_name, product_id, site, url)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (group_name, product_name, product_id, site, url),
+                )
+                product_db_id = cur.lastrowid
+                acao = "cadastrado"
+
+            # Aviso util quando o mesmo SKU ja existe em outra loja.
+            outras_lojas = 0
+            if product_id:
+                outras_lojas = conn.execute(
+                    "SELECT COUNT(*) FROM products WHERE product_id = ? AND id <> ?",
+                    (product_id, product_db_id),
+                ).fetchone()[0]
 
             linked = 0
             for cep in ceps:
@@ -1414,13 +1940,23 @@ def create_app() -> Flask:
                     linked += 1
 
             conn.commit()
+        except sqlite3.Error as exc:
+            conn.rollback()
+            app.logger.exception("Falha ao cadastrar produto")
+            return _aviso_base(f"Não foi possível salvar o produto: {exc}", kind="error")
         finally:
             conn.close()
 
-        msg = "Produto salvo na base."
+        msg = f"Produto {acao} na base"
+        msg += f" ({site})." if site else "."
+        if outras_lojas:
+            msg += (
+                f" O mesmo ID já está em mais {outras_lojas} "
+                f"{'loja' if outras_lojas == 1 else 'lojas'} — os cadastros são independentes."
+            )
         if ceps:
             msg += f" CEPs vinculados: {linked}."
-        return redirect(url_for("index", _anchor="db-manage", db_notice=msg))
+        return _aviso_base(msg)
 
     @app.post("/schedules")
     def schedule_create():
@@ -1470,7 +2006,7 @@ def create_app() -> Flask:
         finally:
             conn.close()
 
-        return redirect(url_for("index", _anchor="scheduler", schedule_notice="Agendamento salvo com sucesso."))
+        return redirect(url_for("schedules_page", schedule_notice="Agendamento salvo com sucesso."))
 
     @app.post("/schedules/<int:schedule_id>/toggle")
     def schedule_toggle(schedule_id: int):
@@ -1489,7 +2025,7 @@ def create_app() -> Flask:
             conn.commit()
         finally:
             conn.close()
-        return redirect(url_for("index", _anchor="scheduler", schedule_notice="Status do agendamento atualizado."))
+        return redirect(url_for("schedules_page", schedule_notice="Status do agendamento atualizado."))
 
     @app.post("/schedules/<int:schedule_id>/run")
     def schedule_run_now(schedule_id: int):
@@ -1518,7 +2054,7 @@ def create_app() -> Flask:
                 conn.commit()
             finally:
                 conn.close()
-            return redirect(url_for("index", _anchor="scheduler", schedule_notice=f"Falha ao rodar agendamento: {exc}"))
+            return redirect(url_for("schedules_page", schedule_notice=f"Falha ao rodar agendamento: {exc}", kind="error"))
 
         conn = sqlite3.connect(path)
         try:
@@ -1552,12 +2088,12 @@ def create_app() -> Flask:
             conn.commit()
         finally:
             conn.close()
-        return redirect(url_for("index", _anchor="scheduler", schedule_notice="Agendamento removido."))
+        return redirect(url_for("schedules_page", schedule_notice="Agendamento removido."))
 
     @app.get("/results")
     def results_center():
         recent_batches = _recent_batches_with_flags(store, limit=30)
-        schedules = _load_schedules_from_db(_db_path())
+        schedules = _with_next_run(_load_schedules_from_db(_db_path()))
         return render_template("results.html", recent_batches=recent_batches, schedules=schedules)
 
     @app.get("/batches/<batch_id>")
@@ -1566,21 +2102,29 @@ def create_app() -> Flask:
         if not jobs:
             abort(404)
 
-        progress = batch_progress.get(batch_id)
-        done_count = sum(1 for j in jobs if j["status"] not in {"QUEUED", "RUNNING"})
-        running_count = sum(1 for j in jobs if j["status"] == "RUNNING")
-        queued_count = sum(1 for j in jobs if j["status"] == "QUEUED")
-
-        running = any(j["status"] in {"QUEUED", "RUNNING"} for j in jobs)
+        summary = _batch_summary(jobs)
+        created_at = min((j.get("created_at") or "") for j in jobs)
         return render_template(
             "batch.html",
             batch_id=batch_id,
-            jobs=jobs,
-            auto_refresh=running,
-            progress=progress,
-            done_count=done_count,
-            running_count=running_count,
-            queued_count=queued_count,
+            short_id=batch_id[:10],
+            created_label=_format_created_label(created_at),
+            rows=[_job_view(j) for j in jobs],
+            summary=summary,
+        )
+
+    @app.get("/api/batches/<batch_id>")
+    def batch_api(batch_id: str):
+        """Alimenta a atualizacao ao vivo da tela de lote, sem recarregar a pagina."""
+        jobs = store.list_by_batch(batch_id)
+        if not jobs:
+            abort(404)
+        return jsonify(
+            {
+                "batch_id": batch_id,
+                "summary": _batch_summary(jobs),
+                "rows": [_job_view(j) for j in jobs],
+            }
         )
 
     @app.post("/batches/<batch_id>/cancel")
@@ -1643,13 +2187,14 @@ def create_app() -> Flask:
         screenshot_url = _artifact_link(artifacts.get("screenshot"))
         html_url = _artifact_link(artifacts.get("html"))
 
-        auto_refresh = job["status"] in {"QUEUED", "RUNNING"} and job.get("finished_at") is None
+        live = job["status"] in {"QUEUED", "RUNNING", "CANCEL_REQUESTED"} and job.get("finished_at") is None
         json_pretty = json.dumps(result, ensure_ascii=False, indent=2) if isinstance(result, dict) else None
 
         return render_template(
             "run.html",
             job=job,
-            auto_refresh=auto_refresh,
+            view=_job_view(job),
+            live=live,
             json_pretty=json_pretty,
             screenshot_url=screenshot_url,
             html_url=html_url,

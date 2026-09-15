@@ -40,11 +40,15 @@
               <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5a8.5 8.5 0 1 0 10.7 10.7Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
             </span>
           </button>
-          <a class="chip" href="{{ url_for('brasil_api.page') }}">BrasilAPI</a>
-          <a class="chip" href="{{ url_for('manual') }}">manual</a>
-          <a class="chip" href="{{ url_for('index') }}#scheduler">agendamentos</a>
-          <a class="chip" href="{{ url_for('results_center') }}">resultados</a>
-          <a class="chip" href="{{ url_for('health') }}" target="_blank" rel="noreferrer">status</a>
+          <span class="header-divider"></span>
+          <nav class="nav-group">
+            <a class="nav-item {% if nav_active == 'home' %}is-active{% endif %}" href="{{ url_for('index') }}">Início</a>
+            <a class="nav-item {% if nav_active == 'base' %}is-active{% endif %}" href="{{ url_for('base_manage') }}">Base</a>
+            <a class="nav-item {% if nav_active == 'brasil_api' %}is-active{% endif %}" href="{{ url_for('brasil_api.page') }}">BrasilAPI</a>
+            <a class="nav-item {% if nav_active == 'schedules' %}is-active{% endif %}" href="{{ url_for('schedules_page') }}">Agendamentos</a>
+            <a class="nav-item {% if nav_active == 'results' %}is-active{% endif %}" href="{{ url_for('results_center') }}">Resultados</a>
+            <a class="nav-item {% if nav_active == 'manual' %}is-active{% endif %}" href="{{ url_for('manual') }}">Manual</a>
+          </nav>
         </div>
       </header>
 

@@ -5,7 +5,7 @@ UI web (Flask) para rodar testes de frete em páginas de produto.
 ## Integração BrasilAPI
 
 O menu **BrasilAPI** permite consultar CEPs, estados e municípios e adicionar um
-CEP consultado à base de testes. Em **Planilha**, o botão
+CEP consultado à base de testes. Em **Link avulso** e **Planilha**, o botão
 **Consultar endereço** verifica o endereço do CEP antes de executar o frete.
 
 A integração utiliza `https://brasilapi.com.br/api`, sem chave e sem precisar

@@ -7,6 +7,7 @@ from selenium.common.exceptions import InvalidSessionIdException, TimeoutExcepti
 from app.infra.cep import normalize_cep
 from app.infra.artifacts import cleanup_expired_artifacts
 from app.domain.models import TestResult
+from app.infra.overlay_dismisser import OverlayDismisser
 from app.pages.probel_product_page import ProbelProductPage
 from app.pages.freight_widget_product_page import FreightWidgetProductPage
 
@@ -70,31 +71,36 @@ class FreightTestService:
             out.append(option)
         return out
 
+    def _build_overlay_dismisser(self) -> OverlayDismisser:
+        settings = self.settings
+        return OverlayDismisser(
+            self.driver,
+            enabled=getattr(settings, "popup_handling", True),
+            settle_seconds=getattr(settings, "popup_settle_seconds", 2.0),
+            max_attempts=getattr(settings, "popup_max_attempts", 3),
+        )
+
     def _select_page(self, url: str):
         host = (urlparse(url).netloc or "").lower()
         if host.startswith("www."):
             host = host[4:]
 
+        overlays = self._build_overlay_dismisser()
+        common = {
+            "driver": self.driver,
+            "timeout": self.settings.wait_timeout_seconds,
+            "slow_type_delay_ms": self.settings.slow_type_delay_ms,
+            "overlays": overlays,
+        }
+
         if "probel.com.br" in host:
-            return "probel", ProbelProductPage(
-                driver=self.driver,
-                timeout=self.settings.wait_timeout_seconds,
-                slow_type_delay_ms=self.settings.slow_type_delay_ms,
-            )
+            return "probel", ProbelProductPage(**common)
 
         if "carrefour.com.br" in host:
-            return "carrefour", FreightWidgetProductPage(
-                driver=self.driver,
-                timeout=self.settings.wait_timeout_seconds,
-                slow_type_delay_ms=self.settings.slow_type_delay_ms,
-            )
+            return "carrefour", FreightWidgetProductPage(**common)
 
         # Generic fallback for stores that expose a standard freight/CEP widget.
-        return "generic", FreightWidgetProductPage(
-            driver=self.driver,
-            timeout=self.settings.wait_timeout_seconds,
-            slow_type_delay_ms=self.settings.slow_type_delay_ms,
-        )
+        return "generic", FreightWidgetProductPage(**common)
 
     def execute(self, url: str, cep: str, artifact_prefix: str | None = None) -> TestResult:
         cep = normalize_cep(cep)
@@ -261,5 +267,11 @@ class FreightTestService:
                 result.artifacts.screenshot = screenshot
             if html:
                 result.artifacts.html = html
+        finally:
+            # Deixa registrado no resultado o que foi fechado durante a consulta,
+            # inclusive quando ela terminou bem: ajuda a explicar lentidao e falhas.
+            overlays = getattr(page, "overlays", None)
+            for note in list(getattr(overlays, "events", None) or []):
+                result.errors.append(note)
 
         return result

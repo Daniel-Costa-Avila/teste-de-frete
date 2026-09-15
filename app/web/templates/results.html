@@ -1,80 +1,117 @@
 {% extends "base.html" %}
 
+{% set nav_active = 'results' %}
+
 {% block title %}Resultados{% endblock %}
 
 {% block content %}
   <section class="card">
-    <div class="section-head">
-      <h2>Central de resultados</h2>
-      <p>Area sempre disponivel para acompanhar pesquisas e baixar dados gerados.</p>
+    <div class="section-head section-head-row">
+      <div>
+        <h2>Resultados</h2>
+        <p>Cada lote já mostra o que foi encontrado — sem precisar abrir para descobrir.</p>
+      </div>
+      <input type="text" class="table-search" placeholder="Buscar por lote ou data..." data-list-search="[data-batch-card]" aria-label="Buscar lote" />
     </div>
-    <div class="actions">
-      <a class="btn btn-secondary" href="{{ url_for('index') }}">Voltar para home</a>
-    </div>
+
+    {% if recent_batches %}
+      <div class="batch-list">
+        {% for b in recent_batches %}
+          <article class="batch-card {% if b.running %}batch-card-live{% endif %}" data-batch-card data-search="{{ b.created_label|lower }} {{ b.short_id }} {{ b.status_label|lower }}">
+            <div class="batch-card-head">
+              <div>
+                <div class="batch-card-title">{{ b.created_label }}</div>
+                <div class="mono muted batch-card-id">{{ b.short_id }} · {{ b.total }} consultas</div>
+              </div>
+              <span class="badge badge-{{ b.status|lower }}">{{ b.status_label }}</span>
+            </div>
+
+            <div class="batch-card-body">
+              <div class="progress">
+                {% if b.total %}
+                  <div class="progress-seg progress-seg-free" style="width: {{ b.free_count * 100 / b.total }}%"></div>
+                  <div class="progress-seg progress-seg-paid" style="width: {{ b.paid_count * 100 / b.total }}%"></div>
+                  <div class="progress-seg progress-seg-warn" style="width: {{ b.unknown_count * 100 / b.total }}%"></div>
+                  <div class="progress-seg progress-seg-error" style="width: {{ (b.error_count + b.canceled_count) * 100 / b.total }}%"></div>
+                {% endif %}
+              </div>
+              <div class="progress-legend progress-legend-compact">
+                <span><i class="swatch swatch-free"></i>{{ b.free_count }} grátis</span>
+                <span>
+                  <i class="swatch swatch-paid"></i>{{ b.paid_count }} cobrados{% if b.paid_average_text %} · média {{ b.paid_average_text }}{% endif %}
+                </span>
+                {% if b.unknown_count %}
+                  <span><i class="swatch swatch-warn"></i>{{ b.unknown_count }} sem retorno</span>
+                {% endif %}
+                {% if b.error_count %}
+                  <span class="legend-error"><i class="swatch swatch-error"></i>{{ b.error_count }} {{ 'erro' if b.error_count == 1 else 'erros' }}</span>
+                {% else %}
+                  <span>sem erros</span>
+                {% endif %}
+                {% if b.pending %}
+                  <span><i class="swatch swatch-queued"></i>{{ b.pending }} pendentes</span>
+                {% endif %}
+              </div>
+            </div>
+
+            <div class="batch-card-actions">
+              <a class="btn btn-secondary btn-compact" href="{{ url_for('batch_detail', batch_id=b.batch_id) }}">
+                {% if b.running %}Acompanhar{% else %}Abrir{% endif %}
+              </a>
+              <a class="btn btn-compact" href="{{ url_for('batch_results_xlsx', batch_id=b.batch_id) }}">XLSX</a>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+      <div class="table-empty" data-list-empty hidden>Nenhum lote corresponde à busca.</div>
+    {% else %}
+      <div class="hint">Nenhuma pesquisa registrada ainda.</div>
+    {% endif %}
   </section>
 
   <section class="card">
-    <h2>Agendamentos automaticos</h2>
+    <div class="section-head section-head-row">
+      <div>
+        <h2>Agendamentos</h2>
+        <p>Quando roda de novo e como foi da última vez.</p>
+      </div>
+      <a class="btn btn-secondary" href="{{ url_for('schedules_page') }}">Gerenciar agendamentos</a>
+    </div>
+
     {% if schedules %}
-      <div class="table">
-        <div class="tr th tr-index tr-schedule">
-          <div>Nome</div>
-          <div>Horario</div>
-          <div>Dia</div>
-          <div>Modo</div>
-          <div>Status</div>
-          <div>Ultima execucao</div>
-          <div>Lote</div>
-        </div>
+      <div class="guide-grid">
         {% for s in schedules %}
-          <div class="tr tr-index tr-schedule">
-            <div class="muted">{{ s.name }}</div>
-            <div class="mono">{{ "%02d"|format(s.hour) }}:{{ "%02d"|format(s.minute) }}</div>
-            <div class="muted">{{ s.weekday_label }}</div>
-            <div class="muted">{{ "Base completa" if s.run_mode == "full" else "Selecao personalizada" }}</div>
-            <div class="badge badge-{{ 'success' if s.active else 'canceled' }}">{{ "ATIVO" if s.active else "PAUSADO" }}</div>
-            <div class="muted">{{ (s.last_run_at or "Nunca executado")[:19]|replace("T", " ") }}</div>
-            <div>
-              {% if s.last_batch_id %}
-                <a class="link" href="{{ url_for('batch_detail', batch_id=s.last_batch_id) }}">abrir ultimo lote</a>
-              {% else %}
-                <span class="muted">-</span>
-              {% endif %}
+          <div class="guide-step">
+            <div class="schedule-head">
+              <div class="guide-step-title" style="margin-bottom: 0;">{{ s.name }}</div>
+              <span class="badge badge-{{ 'success' if s.active else 'canceled' }}">{{ "ATIVO" if s.active else "PAUSADO" }}</span>
             </div>
+            {% if s.active and s.next_run_label %}
+              <div class="muted" style="margin-top: 8px;">
+                Próxima execução: <strong>{{ s.next_run_label }}</strong>{% if s.next_run_in %} — daqui a {{ s.next_run_in }}{% endif %}
+              </div>
+            {% else %}
+              <div class="muted" style="margin-top: 8px;">Não roda enquanto estiver pausado.</div>
+            {% endif %}
+            <div class="muted" style="margin-top: 4px;">
+              {{ "Base completa" if s.run_mode == "full" else "Seleção personalizada" }}
+              {% if s.run_mode != "full" %} · {{ s.product_ids|length }} produtos × {{ s.ceps|length }} CEPs{% endif %}
+            </div>
+            <div class="guide-step-actions">
+              {% if s.last_batch_id %}
+                <a class="link" href="{{ url_for('batch_detail', batch_id=s.last_batch_id) }}">Ver último resultado</a>
+                <span class="muted">·</span>
+              {% endif %}
+              <span class="muted">{% if s.last_run_label %}Última: {{ s.last_run_label }}{% else %}Nunca executado{% endif %}</span>
+            </div>
+            {% if s.last_error %}
+              <div class="hint" style="margin-top: 8px; color: var(--danger);">Último erro: {{ s.last_error }}</div>
+            {% endif %}
           </div>
         {% endfor %}
       </div>
     {% else %}
       <div class="hint">Nenhum agendamento cadastrado ainda.</div>
-    {% endif %}
-  </section>
-
-  <section class="card">
-    <h2>Pesquisas recentes</h2>
-    {% if recent_batches %}
-      <div class="table">
-        <div class="tr th tr-index">
-          <div>ID</div>
-          <div>Status</div>
-          <div>Itens</div>
-          <div>Criado</div>
-          <div>Acoes</div>
-        </div>
-        {% for b in recent_batches %}
-          <div class="tr tr-index">
-            <div class="mono">{{ b.batch_id[:10] }}</div>
-            <div class="badge badge-{{ b.status|lower }}">{{ b.status }}</div>
-            <div class="muted">{{ b.total_jobs }}</div>
-            <div class="muted">{{ (b.created_at or "")[:19]|replace("T", " ") }}</div>
-            <div class="actions">
-              <a class="link" href="{{ url_for('batch_detail', batch_id=b.batch_id) }}">abrir</a>
-              <a class="link" href="{{ url_for('batch_results_xlsx', batch_id=b.batch_id) }}">baixar xlsx</a>
-            </div>
-          </div>
-        {% endfor %}
-      </div>
-    {% else %}
-      <div class="hint">Nenhuma pesquisa registrada ainda.</div>
     {% endif %}
   </section>
 {% endblock %}

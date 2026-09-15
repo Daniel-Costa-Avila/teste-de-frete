@@ -1,0 +1,22 @@
+{# Uma linha do lote. O JS recria este mesmo HTML ao atualizar ao vivo. #}
+<div
+  class="tr tr-batch tr-{{ row.status_group }}"
+  data-row
+  data-row-id="{{ row.id }}"
+  data-group="{{ row.status_group }}"
+  data-freight="{{ row.freight_kind }}"
+  data-search="{{ row.search }}"
+>
+  <div data-label="Situação"><span class="badge badge-{{ row.status_group }}">{{ row.status_label }}</span></div>
+  <div data-label="Produto">
+    <span class="row-product">{{ row.product_name }}</span>
+    {% if row.product_id %}<span class="mono muted">{{ row.product_id }}</span>{% endif %}
+    {% if row.site %}<div class="row-site">{{ row.site }}</div>{% endif %}
+    {% if row.status_hint %}<div class="row-hint">{{ row.status_hint }}</div>{% endif %}
+  </div>
+  <div class="mono" data-label="CEP">{{ row.cep }}</div>
+  <div data-label="Frete"><span class="freight freight-{{ row.freight_kind|lower }}">{{ row.freight_text }}</span></div>
+  <div class="muted" data-label="Prazo">{{ row.delivery_time or "—" }}</div>
+  <div class="muted" data-label="Modalidade">{{ row.delivery_mode or "—" }}</div>
+  <div data-label="Abrir"><a class="link" href="{{ row.detail_url }}">ver</a></div>
+</div>
